@@ -39,9 +39,9 @@
       {
         "id": "tasks.main",
         "title": "Tasks",
+        "icon": "clock",
         "body": {
-          "type": "declarative",
-          "spec": "windows/main.json"
+          "type": "component"
         }
       }
     ],
@@ -49,7 +49,8 @@
       "mode": "component",
       "bundle": "ui/dist/tasks.js",
       "slots": [
-        "core.nav.workspace"
+        "core.nav.workspace",
+        "core.window.body:tasks.main"
       ]
     },
     "skills": [
