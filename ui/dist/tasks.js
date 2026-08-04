@@ -30,11 +30,11 @@ function ce(e) {
     return l.kind === "cron" ? l.expr || "cron" : l.kind || "scheduled";
   }
   function G() {
-    const [t, a] = x(!1), [l, s] = x([]), [m, p] = x(null), [C, i] = x(null), o = R(null), d = _(async () => {
+    const [t, a] = x(!1), [l, s] = x([]), [m, u] = x(null), [C, i] = x(null), o = R(null), d = _(async () => {
       try {
-        s(await A.listTasks()), p(null);
+        s(await A.listTasks()), u(null);
       } catch (n) {
-        p(String(n.message || n));
+        u(String(n.message || n));
       }
     }, []);
     k(() => {
@@ -44,22 +44,22 @@ function ce(e) {
     }, [d]), k(() => () => clearTimeout(o.current), []);
     const y = _(() => {
       clearTimeout(o.current), a(!0), d();
-    }, [d]), u = _(() => {
+    }, [d]), p = _(() => {
       o.current = setTimeout(() => a(!1), 150);
     }, []), w = _(() => {
       var n;
       a(!1), (n = window.__awOpenAppWindow) == null || n.call(window, "tasks.main");
     }, []), h = _(async (n) => {
-      i(n.id), p(null);
+      i(n.id), u(null);
       try {
         await A.runTask(n.id), await d();
       } catch (S) {
-        p(`${n.name}: ${S.message || S}`);
+        u(`${n.name}: ${S.message || S}`);
       } finally {
         i(null);
       }
     }, [d]);
-    return /* @__PURE__ */ e.h("div", { className: "relative", onMouseEnter: y, onMouseLeave: u }, /* @__PURE__ */ e.h(
+    return /* @__PURE__ */ e.h("div", { className: "relative", onMouseEnter: y, onMouseLeave: p }, /* @__PURE__ */ e.h(
       "div",
       {
         onClick: w,
@@ -172,11 +172,11 @@ function ce(e) {
     return `bg-[var(--color-bg-primary)] border rounded px-2 py-1.5 text-xs text-[var(--color-text-primary)] ${t ? "border-[var(--color-danger)]" : "border-[var(--color-border)]"}`;
   }
   function q({ value: t, error: a, onChange: l, onRemove: s, nextFireAt: m }) {
-    const p = t.kind, C = (o) => l(z(o)), i = (o) => l({ ...t, ...o });
+    const u = t.kind, C = (o) => l(z(o)), i = (o) => l({ ...t, ...o });
     return /* @__PURE__ */ e.h("div", { className: "border border-[var(--color-border)] rounded p-2 bg-[var(--color-bg-primary)]/40" }, /* @__PURE__ */ e.h("div", { className: "flex items-center gap-2 mb-2" }, /* @__PURE__ */ e.h(
       "select",
       {
-        value: p,
+        value: u,
         onChange: (o) => C(o.target.value),
         className: E(!1) + " shrink-0"
       },
@@ -193,7 +193,7 @@ function ce(e) {
         className: "p-1 rounded hover:bg-white/10 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] shrink-0"
       },
       /* @__PURE__ */ e.h("svg", { className: "w-3.5 h-3.5", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" }, /* @__PURE__ */ e.h("polyline", { points: "3 6 5 6 21 6" }), /* @__PURE__ */ e.h("path", { d: "M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" }))
-    )), p === "once" && /* @__PURE__ */ e.h(
+    )), u === "once" && /* @__PURE__ */ e.h(
       "input",
       {
         type: "datetime-local",
@@ -201,7 +201,7 @@ function ce(e) {
         onChange: (o) => i({ at: o.target.value }),
         className: E(!!a) + " w-full"
       }
-    ), p === "daily" && /* @__PURE__ */ e.h("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ e.h("span", { className: "text-[11px] text-[var(--color-text-muted)] w-12" }, "at"), /* @__PURE__ */ e.h(
+    ), u === "daily" && /* @__PURE__ */ e.h("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ e.h("span", { className: "text-[11px] text-[var(--color-text-muted)] w-12" }, "at"), /* @__PURE__ */ e.h(
       "input",
       {
         type: "time",
@@ -209,7 +209,7 @@ function ce(e) {
         onChange: (o) => i({ time: o.target.value }),
         className: E(!!a)
       }
-    )), p === "weekly" && /* @__PURE__ */ e.h("div", { className: "space-y-2" }, /* @__PURE__ */ e.h("div", { className: "flex items-center gap-1 flex-wrap" }, W.map((o, d) => {
+    )), u === "weekly" && /* @__PURE__ */ e.h("div", { className: "space-y-2" }, /* @__PURE__ */ e.h("div", { className: "flex items-center gap-1 flex-wrap" }, W.map((o, d) => {
       const y = (t.days || []).includes(d);
       return /* @__PURE__ */ e.h(
         "button",
@@ -217,8 +217,8 @@ function ce(e) {
           key: d,
           type: "button",
           onClick: () => {
-            const u = new Set(t.days || []);
-            y ? u.delete(d) : u.add(d), i({ days: [...u].sort((w, h) => w - h) });
+            const p = new Set(t.days || []);
+            y ? p.delete(d) : p.add(d), i({ days: [...p].sort((w, h) => w - h) });
           },
           className: `px-2 py-1 text-[11px] rounded border ${y ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)] border-[var(--color-accent)]/30" : "bg-[var(--color-bg-primary)] text-[var(--color-text-muted)] border-[var(--color-border)] hover:bg-white/5"}`
         },
@@ -232,7 +232,7 @@ function ce(e) {
         onChange: (o) => i({ time: o.target.value }),
         className: E(!!a)
       }
-    ))), p === "monthly" && /* @__PURE__ */ e.h("div", { className: "flex items-center gap-2 flex-wrap" }, /* @__PURE__ */ e.h("span", { className: "text-[11px] text-[var(--color-text-muted)]" }, "on day"), /* @__PURE__ */ e.h(
+    ))), u === "monthly" && /* @__PURE__ */ e.h("div", { className: "flex items-center gap-2 flex-wrap" }, /* @__PURE__ */ e.h("span", { className: "text-[11px] text-[var(--color-text-muted)]" }, "on day"), /* @__PURE__ */ e.h(
       "input",
       {
         type: "number",
@@ -250,7 +250,7 @@ function ce(e) {
         onChange: (o) => i({ time: o.target.value }),
         className: E(!!a)
       }
-    )), p === "cron" && /* @__PURE__ */ e.h("div", null, /* @__PURE__ */ e.h(
+    )), u === "cron" && /* @__PURE__ */ e.h("div", null, /* @__PURE__ */ e.h(
       "input",
       {
         type: "text",
@@ -285,10 +285,10 @@ function ce(e) {
     const m = (i, o) => {
       const d = t.slice();
       d[i] = o, a(d);
-    }, p = (i) => a(t.filter((o, d) => d !== i)), C = (i) => a([...t, z(i)]);
+    }, u = (i) => a(t.filter((o, d) => d !== i)), C = (i) => a([...t, z(i)]);
     return /* @__PURE__ */ e.h("div", { className: "space-y-2" }, /* @__PURE__ */ e.h("div", { className: "flex items-center justify-between" }, /* @__PURE__ */ e.h("span", { className: "text-[11px] uppercase tracking-wider text-[var(--color-text-muted)]" }, "Schedules"), /* @__PURE__ */ e.h("span", { className: "text-[10px] text-[var(--color-text-muted)]" }, l != null && l.next_fire_at ? /* @__PURE__ */ e.h(e.React.Fragment, null, "Next fires: ", /* @__PURE__ */ e.h("span", { className: "font-mono text-[var(--color-accent)]" }, O(l.next_fire_at))) : t.length === 0 ? "No schedule — runs only on manual ▶" : "No upcoming fire")), t.map((i, o) => {
       var y;
-      const d = (y = l == null ? void 0 : l.entries) == null ? void 0 : y.find((u) => u.index === o);
+      const d = (y = l == null ? void 0 : l.entries) == null ? void 0 : y.find((p) => p.index === o);
       return /* @__PURE__ */ e.h(
         q,
         {
@@ -296,8 +296,8 @@ function ce(e) {
           value: i,
           error: d && !d.ok ? d.error : null,
           nextFireAt: d == null ? void 0 : d.next_fire_at,
-          onChange: (u) => m(o, u),
-          onRemove: () => p(o)
+          onChange: (p) => m(o, p),
+          onRemove: () => u(o)
         }
       );
     }), /* @__PURE__ */ e.h("div", { className: "flex items-center gap-1.5 flex-wrap pt-1" }, /* @__PURE__ */ e.h("span", { className: "text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mr-1" }, "Add:"), [
@@ -319,7 +319,7 @@ function ce(e) {
     ))));
   }
   function j({ checked: t, onChange: a, disabled: l, label: s, tone: m = "danger" }) {
-    const p = m === "ok" ? "bg-green-500" : "bg-[var(--color-danger)]";
+    const u = m === "ok" ? "bg-green-500" : "bg-[var(--color-danger)]";
     return /* @__PURE__ */ e.h(
       "button",
       {
@@ -329,7 +329,7 @@ function ce(e) {
         disabled: l,
         onClick: () => !l && a(!t),
         title: s,
-        className: `relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${l ? "bg-white/5 cursor-not-allowed" : t ? p : "bg-white/10 hover:bg-white/15"}`
+        className: `relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${l ? "bg-white/5 cursor-not-allowed" : t ? u : "bg-white/10 hover:bg-white/15"}`
       },
       /* @__PURE__ */ e.h(
         "span",
@@ -340,7 +340,7 @@ function ce(e) {
     );
   }
   function Q({ task: t, onClose: a, onSaved: l }) {
-    const s = !t, [m, p] = x((t == null ? void 0 : t.name) || ""), [C, i] = x((t == null ? void 0 : t.prompt) || ""), [o, d] = x((t == null ? void 0 : t.schedules) || []), [y, u] = x((t == null ? void 0 : t.enabled) ?? !0), [w, h] = x(null), [n, S] = x(!1), [T, M] = x((t == null ? void 0 : t.type) || "terminal"), [r, v] = x((t == null ? void 0 : t.agent_slug) || ""), [f, g] = x((t == null ? void 0 : t.reuse_session) ?? !1), [b, $] = x((t == null ? void 0 : t.command) || ""), [N, re] = x((t == null ? void 0 : t.notify_exit_codes) || ""), [D, I] = x([]);
+    const s = !t, [m, u] = x((t == null ? void 0 : t.name) || ""), [C, i] = x((t == null ? void 0 : t.prompt) || ""), [o, d] = x((t == null ? void 0 : t.schedules) || []), [y, p] = x((t == null ? void 0 : t.enabled) ?? !0), [w, h] = x(null), [n, S] = x(!1), [T, M] = x((t == null ? void 0 : t.type) || "terminal"), [r, v] = x((t == null ? void 0 : t.agent_slug) || ""), [f, g] = x((t == null ? void 0 : t.reuse_session) ?? !1), [b, $] = x((t == null ? void 0 : t.command) || ""), [N, re] = x((t == null ? void 0 : t.notify_exit_codes) || ""), [D, I] = x([]);
     k(() => {
       e.sdk.api.fetch(e.app.apiUrl("/agents")).then((c) => c.json()).then((c) => I(c.ap_agents || [])).catch(() => I([]));
     }, []);
@@ -401,7 +401,7 @@ function ce(e) {
       {
         autoFocus: !0,
         value: m,
-        onChange: (c) => p(c.target.value),
+        onChange: (c) => u(c.target.value),
         placeholder: "e.g. Daily standup digest",
         className: "w-full bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded px-2 py-1.5 text-xs text-[var(--color-text-primary)]"
       }
@@ -480,7 +480,7 @@ function ce(e) {
       j,
       {
         checked: y,
-        onChange: u,
+        onChange: p,
         label: "Enabled",
         tone: "ok"
       }
@@ -502,22 +502,22 @@ function ce(e) {
     ))));
   }
   function X({ presentation: t, hideTaskTags: a, onClick: l }) {
-    const s = R(null), m = R(null), [p, C] = x(0.18), i = 1e3, o = 650, d = o / i;
+    const s = R(null), m = R(null), [u, C] = x(0.18), i = 1e3, o = 650, d = o / i;
     k(() => {
-      const u = m.current;
-      if (!u || typeof ResizeObserver > "u") return;
+      const p = m.current;
+      if (!p || typeof ResizeObserver > "u") return;
       const w = new ResizeObserver((h) => {
         for (const n of h) {
           const S = n.contentRect.width;
           S > 0 && C(S / i);
         }
       });
-      return w.observe(u), () => w.disconnect();
+      return w.observe(p), () => w.disconnect();
     }, []), k(() => {
-      const u = s.current;
-      if (!(!u || !(t != null && t.html)))
+      const p = s.current;
+      if (!(!p || !(t != null && t.html)))
         try {
-          const w = u.contentDocument;
+          const w = p.contentDocument;
           w.open();
           const h = "<style>html,body{margin:0;padding:0;overflow:hidden;}*{max-width:100%;box-sizing:border-box;}</style>";
           let n = t.html;
@@ -525,7 +525,7 @@ function ce(e) {
         } catch {
         }
     }, [t == null ? void 0 : t.html]);
-    const y = (t.tags || []).filter((u) => !a || !a.has(u));
+    const y = (t.tags || []).filter((p) => !a || !a.has(p));
     return /* @__PURE__ */ e.h(
       "div",
       {
@@ -555,27 +555,27 @@ function ce(e) {
               height: o,
               border: 0,
               pointerEvents: "none",
-              transform: `scale(${p})`,
+              transform: `scale(${u})`,
               transformOrigin: "top left"
             }
           }
         )
       ),
-      /* @__PURE__ */ e.h("div", { className: "px-2 py-1.5 border-t border-[var(--color-border)]" }, /* @__PURE__ */ e.h("div", { className: "text-[11px] font-medium text-[var(--color-text-primary)] truncate" }, t.title || "Untitled"), y.length > 0 && /* @__PURE__ */ e.h("div", { className: "flex flex-wrap gap-0.5 mt-0.5 overflow-hidden", style: { maxHeight: 16 } }, y.slice(0, 3).map((u) => /* @__PURE__ */ e.h(
+      /* @__PURE__ */ e.h("div", { className: "px-2 py-1.5 border-t border-[var(--color-border)]" }, /* @__PURE__ */ e.h("div", { className: "text-[11px] font-medium text-[var(--color-text-primary)] truncate" }, t.title || "Untitled"), y.length > 0 && /* @__PURE__ */ e.h("div", { className: "flex flex-wrap gap-0.5 mt-0.5 overflow-hidden", style: { maxHeight: 16 } }, y.slice(0, 3).map((p) => /* @__PURE__ */ e.h(
         "span",
         {
-          key: u,
+          key: p,
           className: "text-[8px] font-mono leading-none px-1 py-[2px] rounded bg-white/5 border border-white/10 text-[var(--color-text-muted)] truncate",
-          title: u
+          title: p
         },
-        u
+        p
       )), y.length > 3 && /* @__PURE__ */ e.h("span", { className: "text-[8px] leading-none px-1 py-[2px] text-[var(--color-text-muted)]", title: y.slice(3).join(", ") }, "+", y.length - 3)), /* @__PURE__ */ e.h("div", { className: "text-[9px] text-[var(--color-text-muted)] truncate mt-0.5" }, O(t.created_at)))
     );
   }
   function Z({ task: t, presentations: a }) {
     const l = (m) => {
-      var p;
-      (p = window.__awOpenPresentation) == null || p.call(window, m);
+      var u;
+      (u = window.__awOpenPresentation) == null || u.call(window, m);
     };
     if (!a || a.length === 0)
       return /* @__PURE__ */ e.h("div", { className: "px-3 py-3 text-[11px] text-[var(--color-text-muted)] italic border-t border-[var(--color-border)]" }, "No generated assets yet. Presentations produced inside this task's bound session are tagged ", /* @__PURE__ */ e.h("span", { className: "font-mono" }, "task:", t.id), " automatically.");
@@ -599,7 +599,7 @@ function ce(e) {
     ))) : /* @__PURE__ */ e.h("div", { className: "px-3 py-3 text-[11px] text-[var(--color-text-muted)] italic" }, "No runs yet.");
   }
   function te() {
-    const [t, a] = x([]), [l, s] = x(null), [m, p] = x({}), [C, i] = x(null), o = _(async () => {
+    const [t, a] = x([]), [l, s] = x(null), [m, u] = x({}), [C, i] = x(null), o = _(async () => {
       try {
         const v = await (await e.sdk.api.fetch(e.app.apiUrl("/tasks"))).json();
         a(v.tasks || []);
@@ -613,9 +613,9 @@ function ce(e) {
       const r = () => o();
       return window.addEventListener("aw-task-update", r), () => window.removeEventListener("aw-task-update", r);
     }, [o]);
-    const [d, y] = x({}), u = _(async () => {
+    const [d, y] = x({}), p = _(async () => {
       try {
-        const v = await (await e.sdk.api.fetch("/api/presentations")).json(), f = {}, g = {};
+        const v = await (await e.sdk.api.fetch("/api/apps/presentations/presentations")).json(), f = {}, g = {};
         for (const b of Array.isArray(v) ? v : []) {
           const $ = /* @__PURE__ */ new Set();
           for (const N of b.tags || [])
@@ -638,17 +638,17 @@ function ce(e) {
       return b.sort(($, N) => (N.created_at || 0) - ($.created_at || 0)), b;
     }, [d]);
     k(() => {
-      u();
-    }, [u]), k(() => {
-      const r = () => u();
+      p();
+    }, [p]), k(() => {
+      const r = () => p();
       return window.addEventListener("aw-presentation-update", r), () => window.removeEventListener("aw-presentation-update", r);
-    }, [u]);
+    }, [p]);
     const h = R({});
     k(() => {
       const r = (v) => {
         var g;
         const f = (g = v.detail) == null ? void 0 : g.taskId;
-        f && (p((b) => ({ ...b, [f]: !0 })), setTimeout(() => {
+        f && (u((b) => ({ ...b, [f]: !0 })), setTimeout(() => {
           const b = h.current[f];
           b && b.scrollIntoView && b.scrollIntoView({ behavior: "smooth", block: "center" });
         }, 60));
@@ -701,7 +701,7 @@ function ce(e) {
         /* @__PURE__ */ e.h("div", { className: "grid grid-cols-[minmax(160px,1fr)_90px_minmax(160px,1fr)_60px_120px_70px_140px] items-center gap-2 px-3 py-2 hover:bg-white/[0.02]" }, /* @__PURE__ */ e.h(
           "button",
           {
-            onClick: () => p((g) => ({ ...g, [r.id]: !v })),
+            onClick: () => u((g) => ({ ...g, [r.id]: !v })),
             className: "flex items-center gap-1.5 text-left min-w-0"
           },
           /* @__PURE__ */ e.h("span", { className: "text-[var(--color-text-muted)] text-[10px] w-2.5" }, v ? "▼" : "▶"),
@@ -735,7 +735,7 @@ function ce(e) {
           return /* @__PURE__ */ e.h(
             "button",
             {
-              onClick: () => p((b) => ({ ...b, [r.id]: !v })),
+              onClick: () => u((b) => ({ ...b, [r.id]: !v })),
               title: g > 0 ? `${g} presentation${g === 1 ? "" : "es"} — click to expand` : "No presentations for this task",
               disabled: g === 0,
               className: `flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded transition-colors ${g > 0 ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/25 cursor-pointer" : "text-[var(--color-text-muted)] opacity-40 cursor-not-allowed"}`

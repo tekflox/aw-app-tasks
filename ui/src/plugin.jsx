@@ -31,7 +31,8 @@
 //    core's `apiFetch` (../auth) swapped for host.sdk.api.fetch (routes
 //    through the same BYOD apiBase.js rewrite shim) and this app's own
 //    `/api/apps/tasks/*` paths built via host.app.apiUrl(). The one
-//    cross-app core route (/api/presentations) calls host.sdk.api.fetch
+//    cross-app route (/api/apps/presentations/presentations, owned by
+//    aw-app-presentations) calls host.sdk.api.fetch
 //    directly with the literal path — same mechanism, just not app-scoped.
 
 import { createClient } from './client.js';
@@ -1001,7 +1002,7 @@ export function register(host) {
     const [presentationsByTask, setPresentationsByTask] = useState({});
     const reloadPresentations = useCallback(async () => {
       try {
-        const r = await host.sdk.api.fetch('/api/presentations');
+        const r = await host.sdk.api.fetch('/api/apps/presentations/presentations');
         const all = await r.json();
         const groups = {};
         const seen = {};
