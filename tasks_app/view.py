@@ -12,13 +12,13 @@ React/build step — since that's this app's existing architecture and the
 plugin-host wiring a `component`-mode bundle would need isn't live yet (see
 below).
 
-Only two of the monolith's three task TYPEs are offered here — Terminal and
-Agentic Output. `agent_prompt` is deliberately left out of the segmented
-selector: ``manager.py`` explicitly does not implement it (no Agents
-Platform dependency wired into this decoupled app yet — a task created with
-that type would just record a `status=error` run explaining why). Offering
-a button that always fails would be worse UX than the plain two-way choice
-below.
+All three of the monolith's task TYPEs are offered — Terminal, Agentic
+Output, and Agent Prompt. The Agent Prompt agent picker calls this app's own
+``GET /agents`` (server-side proxy to ``config.agents_platform_base``'s
+``GET /api/agents``, see ``routes.py``/``agents_platform_client.py``) rather
+than hitting Agents Platform directly from the browser — keeps the identity
+token server-side and degrades to an empty dropdown instead of a broken
+dialog when Agents Platform isn't configured/reachable.
 
 Why not the React ``TasksTab.jsx`` component-mode bundle: this app's
 ``ui/src/TasksTab.jsx`` *is* a ported copy of the monolith's TasksTab (see
@@ -185,7 +185,7 @@ def build_view_html() -> str:
 <header>
   <div>
     <h1>Tasks</h1>
-    <p class="sub">Each task fires a prompt into a reusable CLI session, or runs a cheap command and notifies on a notable exit code.</p>
+    <p class="sub">Each task fires a prompt into a reusable CLI session, calls an Agents Platform agent, or runs a cheap command and notifies on a notable exit code.</p>
   </div>
   <button class="primary" id="new-task-btn">+ New task</button>
 </header>
@@ -216,6 +216,7 @@ def build_view_html() -> str:
       <label>Type</label>
       <div class="segmented" id="type-seg">
         <button type="button" data-type="terminal">Terminal</button>
+        <button type="button" data-type="agent_prompt">Agent Prompt</button>
         <button type="button" data-type="agentic_output">Agentic Output</button>
       </div>
       <div class="hint" id="type-hint"></div>
@@ -226,6 +227,26 @@ def build_view_html() -> str:
         <label>Command</label>
         <textarea id="f-prompt" rows="3" placeholder="Shell command typed into the bash session, e.g. ./aw status"></textarea>
         <div class="hint">Runs in a plain bash terminal session. Lines are executed followed by Enter — supports pipes, multiple commands separated by <span class="mono">;</span> or <span class="mono">&amp;&amp;</span>.</div>
+      </div>
+    </div>
+
+    <div id="fields-agent" style="display:none">
+      <div class="field">
+        <label>Agent <span style="text-transform:none;color:var(--muted)">(Agents Platform)</span></label>
+        <select id="f-agent-slug">
+          <option value="">— pick an agent —</option>
+        </select>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label>Prompt</label>
+        <textarea id="f-agent-prompt" rows="6" placeholder="The prompt sent to the agent when this task runs."></textarea>
+      </div>
+      <div class="toggle-row" style="margin-top:10px">
+        <button type="button" class="switch" id="f-reuse-switch"><span class="knob"></span></button>
+        <div class="toggle-text">
+          <div class="toggle-title">Reuse session</div>
+          <div class="toggle-sub">First run creates the agent session; later runs resume it to keep context.</div>
+        </div>
       </div>
     </div>
 
@@ -286,8 +307,11 @@ let previewTimer = null;
 
 const TYPE_HINTS = {
   terminal: 'Runs a CLI/command in a reusable terminal session.',
+  agent_prompt: 'Calls an Agents Platform agent with a prompt.',
   agentic_output: 'Runs a command; on a notable exit code, a workspace notification reports the output.',
 };
+let reuseSession = false;
+let apAgentsLoaded = false;
 
 function fmtTime(epoch) {
   if (!epoch) return '—';
@@ -386,7 +410,7 @@ function renderTasks(tasks) {
     const tr = document.createElement('tr');
     tr.className = 'task-row';
     const statusClass = t.last_run_status === 'ok' ? 'ok' : t.last_run_status === 'error' ? 'error' : 'muted';
-    const typeLabel = t.type === 'agentic_output' ? 'agentic_output' : (t.cli_type || 'terminal');
+    const typeLabel = (t.type === 'agentic_output' || t.type === 'agent_prompt') ? t.type : (t.cli_type || 'terminal');
     tr.innerHTML =
       '<td class="name-cell"><span class="caret">&#9654;</span><span>' + escapeHtml(t.name) + '</span></td>' +
       '<td class="muted mono">' + escapeHtml(typeLabel) + '</td>' +
@@ -452,12 +476,42 @@ function setType(t) {
     b.classList.toggle('active', b.dataset.type === t);
   });
   document.getElementById('fields-terminal').style.display = t === 'terminal' ? 'block' : 'none';
+  document.getElementById('fields-agent').style.display = t === 'agent_prompt' ? 'block' : 'none';
   document.getElementById('fields-agentic').style.display = t === 'agentic_output' ? 'block' : 'none';
   document.getElementById('type-hint').textContent = TYPE_HINTS[t] || '';
+  if (t === 'agent_prompt') loadApAgents();
 }
 document.querySelectorAll('#type-seg button').forEach(b => {
   b.onclick = () => setType(b.dataset.type);
 });
+
+// ---------------------------------------------------------------------
+// Agents Platform agent picker (lazy-loaded on first Agent Prompt open)
+// ---------------------------------------------------------------------
+async function loadApAgents() {
+  if (apAgentsLoaded) return;
+  apAgentsLoaded = true;
+  try {
+    const data = await api('/agents');
+    const sel = document.getElementById('f-agent-slug');
+    const current = sel.value;
+    (data.ap_agents || []).forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.slug;
+      opt.textContent = a.name || a.slug;
+      sel.appendChild(opt);
+    });
+    if (current) sel.value = current;
+  } catch (e) {
+    apAgentsLoaded = false; // allow retry on next open
+  }
+}
+
+function setReuseSession(v) {
+  reuseSession = v;
+  document.getElementById('f-reuse-switch').classList.toggle('on', v);
+}
+document.getElementById('f-reuse-switch').onclick = () => setReuseSession(!reuseSession);
 
 // ---------------------------------------------------------------------
 // Enabled switch
@@ -655,14 +709,18 @@ function openDialog(task) {
   document.getElementById('dlg-title').textContent = task ? ('Edit task — ' + task.name) : 'New task';
   document.getElementById('f-name').value = task ? task.name : '';
   document.getElementById('f-name-echo').textContent = (task && task.name) || '<name>';
-  setType(task ? (task.type === 'agentic_output' ? 'agentic_output' : 'terminal') : 'terminal');
-  document.getElementById('f-prompt').value = task ? (task.prompt || '') : '';
+  const t = task ? (task.type === 'agentic_output' || task.type === 'agent_prompt' ? task.type : 'terminal') : 'terminal';
+  setType(t);
+  document.getElementById('f-prompt').value = task && t === 'terminal' ? (task.prompt || '') : '';
+  document.getElementById('f-agent-prompt').value = task && t === 'agent_prompt' ? (task.prompt || '') : '';
+  document.getElementById('f-agent-slug').value = task ? (task.agent_slug || '') : '';
   document.getElementById('f-command').value = task ? (task.command || '') : '';
   document.getElementById('f-notify-codes').value = task ? (task.notify_exit_codes || '') : '';
   schedules = task ? JSON.parse(JSON.stringify(task.schedules || [])) : [];
   schedPreview = null;
   renderSchedules();
   setEnabled(task ? !!task.enabled : true);
+  setReuseSession(task ? !!task.reuse_session : false);
   document.getElementById('f-error').style.display = 'none';
   dlg.showModal();
 }
@@ -676,11 +734,19 @@ document.getElementById('dlg-save').onclick = async () => {
   if (taskType === 'agentic_output' && !command.trim()) {
     errEl.textContent = 'Command is required.'; errEl.style.display = 'block'; return;
   }
+  const agentSlug = document.getElementById('f-agent-slug').value;
+  if (taskType === 'agent_prompt' && !agentSlug) {
+    errEl.textContent = 'Pick an agent.'; errEl.style.display = 'block'; return;
+  }
   const payload = {
     name, type: taskType, cli_type: 'terminal',
-    prompt: document.getElementById('f-prompt').value,
+    prompt: taskType === 'agent_prompt'
+      ? document.getElementById('f-agent-prompt').value
+      : document.getElementById('f-prompt').value,
     command: taskType === 'agentic_output' ? command : null,
     notify_exit_codes: document.getElementById('f-notify-codes').value || null,
+    agent_slug: taskType === 'agent_prompt' ? agentSlug : null,
+    reuse_session: taskType === 'agent_prompt' ? reuseSession : false,
     schedules, enabled,
   };
   try {

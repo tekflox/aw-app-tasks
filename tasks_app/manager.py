@@ -1,5 +1,5 @@
 """Task execution — ported from the aw monolith's ``src/api/task_manager.py``
-(``TaskManager.run_task``) onto the ``ctx`` facades. Two task types are
+(``TaskManager.run_task``) onto the ``ctx`` facades. Three task types are
 ported:
 
 * ``terminal``       — writes the prompt into a reusable CLI session, via
@@ -11,15 +11,19 @@ ported:
                         a workspace notification (``ctx.notify``) instead of
                         the monolith's Telegram-bot-agent interpretation
                         (see ``agentic_output.py``'s docstring for why).
-
-**Not ported**: ``agent_prompt`` (call an Agents Platform agent with a
-prompt) — the roadmap's dependency list for Scheduled Tasks
-(``watchdog ✅, db ✅, terminals API``) does not include an Agents Platform
-app, so there is nothing to port this onto yet. A task created with
-``type=agent_prompt`` runs and records a clear ``status=error`` run
-explaining that, rather than silently doing nothing or crashing the
-scheduler — a human should decide whether/how to wire this up once an
-Agents-Platform-equivalent app exists.
+* ``agent_prompt``   — calls an Agents Platform agent with the task's prompt,
+                        via ``agents_platform_client.py`` against
+                        ``config.agents_platform_base``/``agents_platform_token``
+                        (same base-URL + bearer-identity-JWT pattern
+                        ``aw-app-agents-platform-runners``'s ``mcp_server.py``
+                        already uses to reach ``agents-platform_multitenant``
+                        from inside this workspace container — the legacy
+                        monolith's ``localhost:10005`` in-process reach is
+                        not available here). When ``reuse_session`` is set,
+                        the returned Agents Platform run's ``session_id`` is
+                        persisted onto the task (``ap_session_id``) and sent
+                        back as ``session_id`` on the next run, resuming the
+                        same conversation.
 
 Session reuse / agent-conversation resume (the monolith's
 ``ensure_task_session``/``resolve_session_for_task``/agent-session-id
@@ -35,7 +39,7 @@ import asyncio
 import logging
 import time
 
-from . import agentic_output, terminal_client
+from . import agentic_output, agents_platform_client, terminal_client
 from .store import TaskStore
 
 logger = logging.getLogger("tasks_app.manager")
@@ -81,12 +85,11 @@ class TaskManager:
                     await self._run_terminal(task, run)
                 elif task_type == "agentic_output":
                     await self._run_agentic_output(task, run)
+                elif task_type == "agent_prompt":
+                    await self._run_agent_prompt(task, run)
                 else:
                     run["status"] = "error"
-                    run["error"] = (
-                        f"task type {task_type!r} is not supported by this decoupled app "
-                        "yet (no Agents Platform dependency declared) — see manager.py"
-                    )
+                    run["error"] = f"unknown task type {task_type!r}"
             except Exception as e:  # noqa: BLE001 - task run must never crash the scheduler
                 logger.exception("Task %s run failed: %s", task_id, e)
                 run["status"] = "error"
@@ -155,6 +158,62 @@ class TaskManager:
                 task_name=task.get("name"),
             )
             await self._safe_notify(message, level=("error" if exit_code else "success"), title=title)
+
+    # ------------------------------------------------------------------
+    # agent_prompt
+    # ------------------------------------------------------------------
+
+    async def _run_agent_prompt(self, task: dict, run: dict) -> None:
+        cfg = self._ctx.config or {}
+        base = cfg.get("agents_platform_base")
+        token = cfg.get("agents_platform_token")
+        if not base or not token:
+            run["status"] = "error"
+            run["error"] = (
+                "agent_prompt task type needs config.agents_platform_base and "
+                "config.agents_platform_token set — see aw-app.json config_schema "
+                "(same values aw-app-agents-platform-runners uses)"
+            )
+            return
+
+        slug = (task.get("agent_slug") or "").strip()
+        if not slug:
+            run["status"] = "error"
+            run["error"] = "agent_prompt task has no agent_slug configured"
+            return
+        prompt = (task.get("prompt") or "").strip()
+        if not prompt:
+            run["status"] = "error"
+            run["error"] = "agent_prompt task has no prompt configured"
+            return
+
+        reuse = bool(task.get("reuse_session"))
+        prior_session = task.get("ap_session_id") if reuse else None
+        target_slug = cfg.get("agents_platform_target") or "adhoc"
+
+        try:
+            result = await agents_platform_client.run_agent(
+                base=base, token=token, slug=slug, prompt=prompt,
+                target_slug=target_slug, session_id=prior_session,
+            )
+        except agents_platform_client.AgentsPlatformError as e:
+            run["status"] = "error"
+            run["error"] = str(e)
+            return
+
+        run["session_id"] = result.get("run_id")
+        run["output"] = result.get("text")
+        if result.get("is_error"):
+            run["status"] = "error"
+            run["error"] = result.get("text") or "agents-platform run failed"
+        else:
+            run["status"] = "ok"
+
+        if reuse and result.get("session_id"):
+            try:
+                self.store.set_ap_session_id(task["id"], result["session_id"])
+            except Exception:
+                logger.warning("Task %s: could not persist ap_session_id", task["id"])
 
     # ------------------------------------------------------------------
     # notifications

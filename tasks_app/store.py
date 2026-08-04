@@ -3,10 +3,15 @@
 (``db:own-tables``) facade instead of the monolith's ``.tmp/tasks.json``
 file. Two own-tables:
 
-* ``app__tasks__tasks``  — one row per task (mirrors the monolith's task dict
-  minus the Agents-Platform-only fields — ``agent_slug``/``reuse_session``/
-  ``ap_session_id``/``agent_session_id`` — which aren't ported; see
-  ``manager.py``'s module docstring for why).
+* ``app__tasks__tasks``  — one row per task (mirrors the monolith's task dict,
+  including the Agents-Platform fields ``agent_slug``/``reuse_session``/
+  ``ap_session_id`` for ``type=agent_prompt`` — see ``manager.py``'s module
+  docstring. ``agent_session_id`` (the monolith's screen-session-linked
+  agent conversation id) is NOT ported — this app has no visibility into
+  core terminal-session internals; ``ap_session_id`` (the Agents Platform
+  run/session id, used to resume via ``session_id`` on the next
+  ``/api/agents/<slug>/run`` call) is the equivalent this app actually
+  uses).
 * ``app__tasks__runs``   — one row per run, newest first, FK'd to
   ``task_id`` (the monolith embedded a capped ``runs[]`` list on the task
   JSON; a real relational table is the more natural ``db:own-tables`` shape
@@ -45,8 +50,22 @@ _TASKS_DDL = """
     created_at DOUBLE PRECISION,
     next_fire_at DOUBLE PRECISION,
     last_run_at DOUBLE PRECISION,
-    last_run_status TEXT
+    last_run_status TEXT,
+    agent_slug TEXT,
+    reuse_session BOOLEAN NOT NULL DEFAULT false,
+    ap_session_id TEXT
 """
+
+# Columns added after the table's first release — CREATE TABLE IF NOT
+# EXISTS is a no-op against an already-existing table, so any workspace
+# that installed this app before these fields existed needs an explicit
+# migration. ADD COLUMN IF NOT EXISTS is idempotent, safe to re-run every
+# process start.
+_TASKS_MIGRATIONS = (
+    "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS agent_slug TEXT",
+    "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS reuse_session BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS ap_session_id TEXT",
+)
 
 _RUNS_DDL = """
     id TEXT PRIMARY KEY,
@@ -64,7 +83,7 @@ _RUNS_DDL = """
 # The editable subset PUT /tasks/{id} accepts.
 _PATCHABLE_FIELDS = (
     "name", "type", "cli_type", "prompt", "command", "notify_exit_codes",
-    "schedules", "enabled",
+    "schedules", "enabled", "agent_slug", "reuse_session",
 )
 
 
@@ -79,6 +98,8 @@ class TaskStore:
         self._ctx = ctx
         ctx.db.create(_TASKS_TABLE, _TASKS_DDL)
         ctx.db.create(_RUNS_TABLE, _RUNS_DDL)
+        for stmt in _TASKS_MIGRATIONS:
+            self._ctx.db.execute(_TASKS_TABLE, stmt)
 
     # ------------------------------------------------------------------
     # Task CRUD
@@ -102,7 +123,8 @@ class TaskStore:
     def create(self, *, name: str, type: str = "terminal", cli_type: str = "terminal",
               prompt: str = "", command: str | None = None,
               notify_exit_codes: str | None = None,
-              schedules: list[dict] | None = None, enabled: bool = True) -> dict:
+              schedules: list[dict] | None = None, enabled: bool = True,
+              agent_slug: str | None = None, reuse_session: bool = False) -> dict:
         task_id = f"task-{uuid.uuid4().hex[:12]}"
         now = _now()
         schedules = list(schedules or [])
@@ -113,17 +135,20 @@ class TaskStore:
             INSERT INTO {table}
                 (id, name, type, cli_type, prompt, command, notify_exit_codes,
                  schedules, enabled, session_id, hidden, created_at,
-                 next_fire_at, last_run_at, last_run_status)
+                 next_fire_at, last_run_at, last_run_status,
+                 agent_slug, reuse_session, ap_session_id)
             VALUES
                 (:id, :name, :type, :cli_type, :prompt, :command, :notify_exit_codes,
                  :schedules, :enabled, NULL, :hidden, :created_at,
-                 :next_fire_at, NULL, NULL)
+                 :next_fire_at, NULL, NULL,
+                 :agent_slug, :reuse_session, NULL)
             """,
             {
                 "id": task_id, "name": name, "type": type, "cli_type": cli_type,
                 "prompt": prompt, "command": command, "notify_exit_codes": notify_exit_codes,
                 "schedules": json.dumps(schedules), "enabled": bool(enabled),
                 "hidden": False, "created_at": now, "next_fire_at": next_fire_at,
+                "agent_slug": agent_slug, "reuse_session": bool(reuse_session),
             },
         )
         return self.get(task_id)
@@ -164,6 +189,12 @@ class TaskStore:
         self._ctx.db.execute(
             _TASKS_TABLE, "UPDATE {table} SET session_id = :sid WHERE id = :id",
             {"sid": session_id, "id": task_id},
+        )
+
+    def set_ap_session_id(self, task_id: str, ap_session_id: str | None) -> None:
+        self._ctx.db.execute(
+            _TASKS_TABLE, "UPDATE {table} SET ap_session_id = :sid WHERE id = :id",
+            {"sid": ap_session_id, "id": task_id},
         )
 
     # ------------------------------------------------------------------
@@ -248,6 +279,8 @@ class TaskStore:
             "session_id": m["session_id"], "created_at": m["created_at"],
             "next_fire_at": m["next_fire_at"], "last_run_at": m["last_run_at"],
             "last_run_status": m["last_run_status"],
+            "agent_slug": m["agent_slug"], "reuse_session": bool(m["reuse_session"]),
+            "ap_session_id": m["ap_session_id"],
         }
         if with_runs:
             d["runs"] = self.runs_for(m["id"])

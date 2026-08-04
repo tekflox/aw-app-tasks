@@ -24,7 +24,7 @@ from __future__ import annotations
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
-from . import scheduling
+from . import agents_platform_client, scheduling
 from .manager import TaskManager
 from .store import TaskStore
 from .view import build_view_html
@@ -32,6 +32,16 @@ from .view import build_view_html
 
 def build_routes(ctx, store: TaskStore, manager: TaskManager) -> FastAPI:
     api = FastAPI(title="tasks")
+
+    @api.get("/agents")
+    async def list_agents():
+        cfg = ctx.config or {}
+        base = cfg.get("agents_platform_base")
+        token = cfg.get("agents_platform_token")
+        if not base or not token:
+            return {"ap_agents": []}
+        agents = await agents_platform_client.list_agents(base=base, token=token)
+        return {"ap_agents": agents}
 
     @api.get("/tasks")
     async def list_tasks():
@@ -47,6 +57,9 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager) -> FastAPI:
         command = data.get("command") or None
         if task_type == "agentic_output" and not command:
             raise HTTPException(status_code=400, detail="command is required for agentic_output")
+        agent_slug = (data.get("agent_slug") or "").strip() or None
+        if task_type == "agent_prompt" and not agent_slug:
+            raise HTTPException(status_code=400, detail="agent_slug is required for agent_prompt")
 
         schedules = data.get("schedules") or []
         if not isinstance(schedules, list):
@@ -61,6 +74,7 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager) -> FastAPI:
             prompt=data.get("prompt") or "", command=command,
             notify_exit_codes=data.get("notify_exit_codes"),
             schedules=schedules, enabled=bool(data.get("enabled", True)),
+            agent_slug=agent_slug, reuse_session=bool(data.get("reuse_session", False)),
         )
         return task
 
