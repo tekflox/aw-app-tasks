@@ -125,7 +125,7 @@ function ce(e) {
     const a = t === "ok" ? "bg-green-500/15 text-green-400" : t === "error" ? "bg-red-500/15 text-red-400" : t === "running" ? "bg-blue-500/15 text-blue-400" : "bg-white/5 text-[var(--color-text-muted)]";
     return /* @__PURE__ */ e.h("span", { className: `px-1.5 py-0.5 rounded text-[10px] font-mono ${a}` }, t || "—");
   }
-  function z(t) {
+  function U(t) {
     if (!t) return "—";
     switch (t.kind) {
       case "once":
@@ -147,9 +147,9 @@ function ce(e) {
     }
   }
   function Y(t) {
-    return !t || !t.length ? "—" : t.length === 1 ? z(t[0]) : `${t.length} schedules`;
+    return !t || !t.length ? "—" : t.length === 1 ? U(t[0]) : `${t.length} schedules`;
   }
-  function D(t) {
+  function z(t) {
     const a = /* @__PURE__ */ new Date(), l = (m) => String(m).padStart(2, "0"), s = `${l(a.getHours())}:${l(Math.min(59, a.getMinutes()))}`;
     switch (t) {
       case "once": {
@@ -172,7 +172,7 @@ function ce(e) {
     return `bg-[var(--color-bg-primary)] border rounded px-2 py-1.5 text-xs text-[var(--color-text-primary)] ${t ? "border-[var(--color-danger)]" : "border-[var(--color-border)]"}`;
   }
   function q({ value: t, error: a, onChange: l, onRemove: s, nextFireAt: m }) {
-    const p = t.kind, C = (o) => l(D(o)), i = (o) => l({ ...t, ...o });
+    const p = t.kind, C = (o) => l(z(o)), i = (o) => l({ ...t, ...o });
     return /* @__PURE__ */ e.h("div", { className: "border border-[var(--color-border)] rounded p-2 bg-[var(--color-bg-primary)]/40" }, /* @__PURE__ */ e.h("div", { className: "flex items-center gap-2 mb-2" }, /* @__PURE__ */ e.h(
       "select",
       {
@@ -285,7 +285,7 @@ function ce(e) {
     const m = (i, o) => {
       const d = t.slice();
       d[i] = o, a(d);
-    }, p = (i) => a(t.filter((o, d) => d !== i)), C = (i) => a([...t, D(i)]);
+    }, p = (i) => a(t.filter((o, d) => d !== i)), C = (i) => a([...t, z(i)]);
     return /* @__PURE__ */ e.h("div", { className: "space-y-2" }, /* @__PURE__ */ e.h("div", { className: "flex items-center justify-between" }, /* @__PURE__ */ e.h("span", { className: "text-[11px] uppercase tracking-wider text-[var(--color-text-muted)]" }, "Schedules"), /* @__PURE__ */ e.h("span", { className: "text-[10px] text-[var(--color-text-muted)]" }, l != null && l.next_fire_at ? /* @__PURE__ */ e.h(e.React.Fragment, null, "Next fires: ", /* @__PURE__ */ e.h("span", { className: "font-mono text-[var(--color-accent)]" }, O(l.next_fire_at))) : t.length === 0 ? "No schedule — runs only on manual ▶" : "No upcoming fire")), t.map((i, o) => {
       var y;
       const d = (y = l == null ? void 0 : l.entries) == null ? void 0 : y.find((u) => u.index === o);
@@ -340,9 +340,9 @@ function ce(e) {
     );
   }
   function Q({ task: t, onClose: a, onSaved: l }) {
-    const s = !t, [m, p] = x((t == null ? void 0 : t.name) || ""), [C, i] = x((t == null ? void 0 : t.prompt) || ""), [o, d] = x((t == null ? void 0 : t.schedules) || []), [y, u] = x((t == null ? void 0 : t.enabled) ?? !0), [w, h] = x(null), [n, S] = x(!1), [T, M] = x((t == null ? void 0 : t.type) || "terminal"), [r, v] = x((t == null ? void 0 : t.agent_slug) || ""), [f, g] = x((t == null ? void 0 : t.reuse_session) ?? !1), [b, $] = x((t == null ? void 0 : t.command) || ""), [N, re] = x((t == null ? void 0 : t.notify_exit_codes) || ""), [I, U] = x([]);
+    const s = !t, [m, p] = x((t == null ? void 0 : t.name) || ""), [C, i] = x((t == null ? void 0 : t.prompt) || ""), [o, d] = x((t == null ? void 0 : t.schedules) || []), [y, u] = x((t == null ? void 0 : t.enabled) ?? !0), [w, h] = x(null), [n, S] = x(!1), [T, M] = x((t == null ? void 0 : t.type) || "terminal"), [r, v] = x((t == null ? void 0 : t.agent_slug) || ""), [f, g] = x((t == null ? void 0 : t.reuse_session) ?? !1), [b, $] = x((t == null ? void 0 : t.command) || ""), [N, re] = x((t == null ? void 0 : t.notify_exit_codes) || ""), [D, I] = x([]);
     k(() => {
-      e.sdk.api.fetch("/api/whatsapp/agent-picker").then((c) => c.json()).then((c) => U(c.ap_agents || [])).catch(() => U([]));
+      e.sdk.api.fetch(e.app.apiUrl("/agents")).then((c) => c.json()).then((c) => I(c.ap_agents || [])).catch(() => I([]));
     }, []);
     const ae = {
       terminal: "Terminal",
@@ -431,7 +431,7 @@ function ce(e) {
         className: "w-full bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded px-2 py-1.5 text-xs text-[var(--color-text-primary)]"
       },
       /* @__PURE__ */ e.h("option", { value: "" }, "— pick an agent —"),
-      I.map((c) => /* @__PURE__ */ e.h("option", { key: c.slug, value: c.slug }, c.name || c.slug))
+      D.map((c) => /* @__PURE__ */ e.h("option", { key: c.slug, value: c.slug }, c.name || c.slug))
     )), /* @__PURE__ */ e.h("div", null, /* @__PURE__ */ e.h("label", { className: "block text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1" }, "Prompt"), /* @__PURE__ */ e.h(
       "textarea",
       {
@@ -466,7 +466,7 @@ function ce(e) {
         className: "w-full bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded px-2 py-1.5 text-xs text-[var(--color-text-primary)]"
       },
       /* @__PURE__ */ e.h("option", { value: "" }, "— pick an agent —"),
-      I.map((c) => /* @__PURE__ */ e.h("option", { key: c.slug, value: c.slug }, c.name || c.slug))
+      D.map((c) => /* @__PURE__ */ e.h("option", { key: c.slug, value: c.slug }, c.name || c.slug))
     ), /* @__PURE__ */ e.h("div", { className: "text-[10px] text-[var(--color-text-muted)] mt-1" }, "Only invoked on a notable exit code — with your prompt below plus the command's captured output appended.")), /* @__PURE__ */ e.h("div", null, /* @__PURE__ */ e.h("label", { className: "block text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1" }, "Prompt"), /* @__PURE__ */ e.h(
       "textarea",
       {
@@ -718,7 +718,7 @@ function ce(e) {
           "span",
           {
             className: "text-[11px] text-[var(--color-text-muted)] truncate",
-            title: (r.schedules || []).map(z).join(`
+            title: (r.schedules || []).map(U).join(`
 `) || "—"
           },
           f

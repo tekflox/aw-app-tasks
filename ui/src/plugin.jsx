@@ -30,10 +30,9 @@
 //    aw-workspace-ui's now-deleted src/components/TasksTab.jsx, with
 //    core's `apiFetch` (../auth) swapped for host.sdk.api.fetch (routes
 //    through the same BYOD apiBase.js rewrite shim) and this app's own
-//    `/api/apps/tasks/*` paths built via host.app.apiUrl(). Cross-app core
-//    routes (/api/presentations, /api/whatsapp/agent-picker) call
-//    host.sdk.api.fetch directly with the literal path — same mechanism,
-//    just not app-scoped.
+//    `/api/apps/tasks/*` paths built via host.app.apiUrl(). The one
+//    cross-app core route (/api/presentations) calls host.sdk.api.fetch
+//    directly with the literal path — same mechanism, just not app-scoped.
 
 import { createClient } from './client.js';
 
@@ -554,7 +553,12 @@ export function register(host) {
     const [notifyExitCodes, setNotifyExitCodes] = useState(task?.notify_exit_codes || '');
     const [apAgents, setApAgents] = useState([]);
     useEffect(() => {
-      host.sdk.api.fetch('/api/whatsapp/agent-picker')
+      // This app's own GET /agents (tasks_app/routes.py) — server-side
+      // proxies agents-platform's /api/agents using ctx.config's
+      // agents_platform_base/token. Was previously pointed at the
+      // monolith's /api/whatsapp/agent-picker, which was never ported to
+      // aw-workspace and doesn't exist here — the picker was always empty.
+      host.sdk.api.fetch(host.app.apiUrl('/agents'))
         .then((r) => r.json())
         .then((d) => setApAgents(d.ap_agents || []))
         .catch(() => setApAgents([]));
