@@ -3,26 +3,24 @@ is notable.
 
 Ported from the aw monolith's ``tools/agentic_output.py`` (the
 :func:`run_command` / :func:`parse_notify_codes` / notable-exit-code policy
-is identical) but the *delivery* mechanism is adapted for the decoupled-app
-capability catalog:
+is identical). Note the monolith actually has TWO code paths that share
+these primitives:
 
-* Monolith: POSTs to the Agents Platform's ``/api/telegram/inject`` so a
-  Telegram bot's own agent reads the output and writes a human explanation
-  into a chat. That needs an Agents Platform + Telegram bot dependency this
-  app does not declare (the roadmap entry for Scheduled Tasks only lists
-  ``watchdog``, ``db``, ``terminals API`` as framework deps — no Agents
-  Platform/Telegram dep), so it isn't ported.
-* Here: fires a workspace notification via ``ctx.notify`` (``notifications:
-  send``) with the command, exit code, and truncated output — the user reads
-  it in the notification tray instead of a bot chat. No LLM interpretation
-  step (this module still does zero LLM calls, matching the original's
-  "thin, deterministic wrapper" design goal); that's a deliberate scope cut
-  a human should double-check if agent-authored interpretation of the output
-  is actually wanted later — see the app README.
+* ``tools/agentic_output.py`` (standalone CLI) — POSTs to the Agents
+  Platform's ``/api/telegram/inject``.
+* ``src/api/task_manager.py``'s ``TaskManager._run_agentic_output`` (what
+  the Tasks feature itself runs) — reuses these primitives, then delivers
+  via ``_ap_agent_run``, the SAME call the ``agent_prompt`` type uses
+  (``POST /api/agents/{slug}/run``). This app's ``manager.py`` ports THAT
+  path (the one Tasks actually executes) — see its docstring and
+  ``_run_agentic_output``. Delivery destination (Telegram, in-app, etc.) is
+  therefore whatever the configured ``agent_slug`` itself does with a
+  reply, not something this module decides.
 
-This is the engine behind the ``agentic_output`` task type in
-``manager.py``. It is also usable standalone (no ``ctx``): call
-:func:`run_command` + :func:`parse_notify_codes` directly.
+This module now only provides the deterministic, no-LLM primitives used by
+``manager.py``'s ``_run_agentic_output``: :func:`run_command`,
+:func:`parse_notify_codes`, :func:`should_notify`, :func:`truncate`. Also
+usable standalone (no ``ctx``).
 """
 from __future__ import annotations
 
@@ -94,14 +92,3 @@ def run_command(command: str, cwd: str | None = None,
         if isinstance(partial, bytes):
             partial = partial.decode("utf-8", "replace")
         return 124, f"{partial}\n\n[agentic_output] command timed out after {timeout_s}s"
-
-
-def build_notification(*, command: str, exit_code: int, output: str,
-                       task_name: str | None) -> tuple[str, str]:
-    """Compose (title, message) for the workspace notification."""
-    title = f"Task {task_name}" if task_name else "Scheduled command"
-    message = (
-        f"`{command}` exited {exit_code} (non-zero indicates failure).\n\n"
-        f"{truncate(output)}"
-    )
-    return title, message

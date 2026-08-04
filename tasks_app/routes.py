@@ -58,8 +58,8 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager) -> FastAPI:
         if task_type == "agentic_output" and not command:
             raise HTTPException(status_code=400, detail="command is required for agentic_output")
         agent_slug = (data.get("agent_slug") or "").strip() or None
-        if task_type == "agent_prompt" and not agent_slug:
-            raise HTTPException(status_code=400, detail="agent_slug is required for agent_prompt")
+        if task_type in ("agent_prompt", "agentic_output") and not agent_slug:
+            raise HTTPException(status_code=400, detail=f"agent_slug is required for {task_type}")
 
         schedules = data.get("schedules") or []
         if not isinstance(schedules, list):

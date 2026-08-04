@@ -230,6 +230,19 @@ def build_view_html() -> str:
       </div>
     </div>
 
+    <div id="fields-agentic" style="display:none">
+      <div class="field">
+        <label>Command</label>
+        <textarea id="f-command" rows="3" placeholder="Cheap shell command to run first, e.g. a diff/check script — no LLM cost."></textarea>
+        <div class="hint">Runs on every fire. The agent below is only invoked when the exit code is notable — this is what keeps the type cheap.</div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label>Notify on exit code</label>
+        <input type="text" id="f-notify-codes" placeholder="blank = any non-zero · or a list like 1,2,127"/>
+        <div class="hint">Which exit codes count as "there's a difference" and trigger the agent below. Leave blank for any non-zero.</div>
+      </div>
+    </div>
+
     <div id="fields-agent" style="display:none">
       <div class="field">
         <label>Agent <span style="text-transform:none;color:var(--muted)">(Agents Platform)</span></label>
@@ -239,7 +252,7 @@ def build_view_html() -> str:
       </div>
       <div class="field" style="margin-top:10px">
         <label>Prompt</label>
-        <textarea id="f-agent-prompt" rows="6" placeholder="The prompt sent to the agent when this task runs."></textarea>
+        <textarea id="f-agent-prompt" rows="6" placeholder="The prompt sent to the agent (agentic_output appends the command's output automatically)."></textarea>
       </div>
       <div class="toggle-row" style="margin-top:10px">
         <button type="button" class="switch" id="f-reuse-switch"><span class="knob"></span></button>
@@ -247,19 +260,6 @@ def build_view_html() -> str:
           <div class="toggle-title">Reuse session</div>
           <div class="toggle-sub">First run creates the agent session; later runs resume it to keep context.</div>
         </div>
-      </div>
-    </div>
-
-    <div id="fields-agentic" style="display:none">
-      <div class="field">
-        <label>Command</label>
-        <textarea id="f-command" rows="3" placeholder="Cheap shell command to run first, e.g. a diff/check script — no LLM cost."></textarea>
-        <div class="hint">Runs on every fire. A workspace notification only fires when the exit code is notable — this is what keeps the type cheap.</div>
-      </div>
-      <div class="field" style="margin-top:10px">
-        <label>Notify on exit code</label>
-        <input type="text" id="f-notify-codes" placeholder="blank = any non-zero · or a list like 1,2,127"/>
-        <div class="hint">Which exit codes count as "there's a difference" and trigger the notification. Leave blank for any non-zero.</div>
       </div>
     </div>
 
@@ -308,7 +308,7 @@ let previewTimer = null;
 const TYPE_HINTS = {
   terminal: 'Runs a CLI/command in a reusable terminal session.',
   agent_prompt: 'Calls an Agents Platform agent with a prompt.',
-  agentic_output: 'Runs a command; on a notable exit code, a workspace notification reports the output.',
+  agentic_output: 'Runs a command; on a notable exit code, hands the output to an Agents Platform agent to interpret and report.',
 };
 let reuseSession = false;
 let apAgentsLoaded = false;
@@ -476,10 +476,10 @@ function setType(t) {
     b.classList.toggle('active', b.dataset.type === t);
   });
   document.getElementById('fields-terminal').style.display = t === 'terminal' ? 'block' : 'none';
-  document.getElementById('fields-agent').style.display = t === 'agent_prompt' ? 'block' : 'none';
+  document.getElementById('fields-agent').style.display = (t === 'agent_prompt' || t === 'agentic_output') ? 'block' : 'none';
   document.getElementById('fields-agentic').style.display = t === 'agentic_output' ? 'block' : 'none';
   document.getElementById('type-hint').textContent = TYPE_HINTS[t] || '';
-  if (t === 'agent_prompt') loadApAgents();
+  if (t === 'agent_prompt' || t === 'agentic_output') loadApAgents();
 }
 document.querySelectorAll('#type-seg button').forEach(b => {
   b.onclick = () => setType(b.dataset.type);
@@ -712,7 +712,7 @@ function openDialog(task) {
   const t = task ? (task.type === 'agentic_output' || task.type === 'agent_prompt' ? task.type : 'terminal') : 'terminal';
   setType(t);
   document.getElementById('f-prompt').value = task && t === 'terminal' ? (task.prompt || '') : '';
-  document.getElementById('f-agent-prompt').value = task && t === 'agent_prompt' ? (task.prompt || '') : '';
+  document.getElementById('f-agent-prompt').value = task && (t === 'agent_prompt' || t === 'agentic_output') ? (task.prompt || '') : '';
   document.getElementById('f-agent-slug').value = task ? (task.agent_slug || '') : '';
   document.getElementById('f-command').value = task ? (task.command || '') : '';
   document.getElementById('f-notify-codes').value = task ? (task.notify_exit_codes || '') : '';
@@ -735,18 +735,18 @@ document.getElementById('dlg-save').onclick = async () => {
     errEl.textContent = 'Command is required.'; errEl.style.display = 'block'; return;
   }
   const agentSlug = document.getElementById('f-agent-slug').value;
-  if (taskType === 'agent_prompt' && !agentSlug) {
+  if ((taskType === 'agent_prompt' || taskType === 'agentic_output') && !agentSlug) {
     errEl.textContent = 'Pick an agent.'; errEl.style.display = 'block'; return;
   }
   const payload = {
     name, type: taskType, cli_type: 'terminal',
-    prompt: taskType === 'agent_prompt'
+    prompt: (taskType === 'agent_prompt' || taskType === 'agentic_output')
       ? document.getElementById('f-agent-prompt').value
       : document.getElementById('f-prompt').value,
     command: taskType === 'agentic_output' ? command : null,
     notify_exit_codes: document.getElementById('f-notify-codes').value || null,
-    agent_slug: taskType === 'agent_prompt' ? agentSlug : null,
-    reuse_session: taskType === 'agent_prompt' ? reuseSession : false,
+    agent_slug: (taskType === 'agent_prompt' || taskType === 'agentic_output') ? agentSlug : null,
+    reuse_session: (taskType === 'agent_prompt' || taskType === 'agentic_output') ? reuseSession : false,
     schedules, enabled,
   };
   try {

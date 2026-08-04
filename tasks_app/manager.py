@@ -7,10 +7,13 @@ ported:
                         ``config.terminals_api_base`` — see that module's
                         docstring for the "not yet verified against a live
                         core terminals API" caveat).
-* ``agentic_output``  — runs a cheap command; on a notable exit code, fires
-                        a workspace notification (``ctx.notify``) instead of
-                        the monolith's Telegram-bot-agent interpretation
-                        (see ``agentic_output.py``'s docstring for why).
+* ``agentic_output``  — runs a cheap command; on a notable exit code, hands
+                        the output to the configured Agents Platform agent
+                        to interpret (same delivery mechanism as
+                        agent_prompt, ported 1:1 from the monolith's
+                        task_manager.py::_run_agentic_output — see that
+                        method's own docstring). Requires agent_slug just
+                        like agent_prompt does.
 * ``agent_prompt``   — calls an Agents Platform agent with the task's prompt,
                         via ``agents_platform_client.py`` against
                         ``config.agents_platform_base``/``agents_platform_token``
@@ -135,10 +138,28 @@ class TaskManager:
     # ------------------------------------------------------------------
 
     async def _run_agentic_output(self, task: dict, run: dict) -> None:
+        """Run the task's command (cheap, no LLM); only if the exit code is
+        *notable* (see notify_exit_codes) hand the command's output + the
+        task's prompt to the configured Agents Platform agent to interpret
+        and act — this is the point of the type: pay for an agent
+        invocation only when something actually changed, not on every tick.
+
+        Ported 1:1 from the monolith's task_manager.py::_run_agentic_output
+        — it reuses the exact same delivery mechanism as agent_prompt
+        (agents_platform_client.run_agent), so notifications actually reach
+        wherever the picked agent_slug delivers to (e.g. a telegram-* agent
+        replies into the user's Telegram chat) instead of only the
+        workspace SPA's in-app notification tray.
+        """
         command = (task.get("command") or "").strip()
         if not command:
             run["status"] = "error"
             run["error"] = "agentic_output task has no command configured"
+            return
+        slug = (task.get("agent_slug") or "").strip()
+        if not slug:
+            run["status"] = "error"
+            run["error"] = "agentic_output task has no agent_slug configured"
             return
 
         notify_codes = agentic_output.parse_notify_codes(task.get("notify_exit_codes"))
@@ -147,17 +168,58 @@ class TaskManager:
             None, agentic_output.run_command, command,
         )
         run["exit_code"] = exit_code
-        run["output"] = agentic_output.truncate(output)
-        run["status"] = "ok"
 
         notify = agentic_output.should_notify(exit_code, notify_codes)
         run["notified"] = notify
-        if notify and self._ctx.has("notifications:send"):
-            title, message = agentic_output.build_notification(
-                command=command, exit_code=exit_code, output=output,
-                task_name=task.get("name"),
+        if not notify:
+            run["status"] = "ok"
+            run["output"] = f"exit={exit_code} — no notable difference, agent not invoked"
+            return
+
+        cfg = self._ctx.config or {}
+        base = cfg.get("agents_platform_base")
+        token = cfg.get("agents_platform_token")
+        if not base or not token:
+            run["status"] = "error"
+            run["error"] = (
+                "agentic_output task needs config.agents_platform_base and "
+                "config.agents_platform_token set — see aw-app.json config_schema"
             )
-            await self._safe_notify(message, level=("error" if exit_code else "success"), title=title)
+            return
+
+        base_prompt = (task.get("prompt") or "").strip()
+        combined_prompt = (
+            f"{base_prompt}\n\nSaída do comando (exit code {exit_code}):\n"
+            f"{agentic_output.truncate(output)}"
+        ).strip()
+
+        reuse = bool(task.get("reuse_session"))
+        prior_session = task.get("ap_session_id") if reuse else None
+        target_slug = cfg.get("agents_platform_target") or "adhoc"
+
+        try:
+            result = await agents_platform_client.run_agent(
+                base=base, token=token, slug=slug, prompt=combined_prompt,
+                target_slug=target_slug, session_id=prior_session,
+            )
+        except agents_platform_client.AgentsPlatformError as e:
+            run["status"] = "error"
+            run["error"] = str(e)
+            return
+
+        run["session_id"] = result.get("run_id")
+        run["output"] = result.get("text")
+        if result.get("is_error"):
+            run["status"] = "error"
+            run["error"] = result.get("text") or "agents-platform run failed"
+        else:
+            run["status"] = "ok"
+
+        if reuse and result.get("session_id"):
+            try:
+                self.store.set_ap_session_id(task["id"], result["session_id"])
+            except Exception:
+                logger.warning("Task %s: could not persist ap_session_id", task["id"])
 
     # ------------------------------------------------------------------
     # agent_prompt
