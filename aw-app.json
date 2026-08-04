@@ -1,0 +1,80 @@
+{
+  "manifest_version": 1,
+  "id": "tasks",
+  "name": "Scheduled Tasks",
+  "version": "0.1.0",
+  "description": "Scheduled prompts/commands that fire into a reusable CLI session or run a cheap shell check and notify on a notable exit code. Migrated from the aw monolith (src/mcp/tasks.py + tools/agentic_output.py, src/api/task_manager.py + task_scheduler.py + routes/tasks.py, TasksTab.jsx).",
+  "tier": "inprocess",
+  "requires_ui_refresh": true,
+  "publisher": "TekFlox",
+  "resource_estimate": {
+    "cpu": "low",
+    "memory": "low",
+    "disk": "low"
+  },
+  "runtime": {
+    "python": ">=3.11",
+    "entrypoint": "tasks_app.plugin:TasksAppPlugin",
+    "pip_requires": [
+      "croniter>=2.0",
+      "httpx>=0.24"
+    ]
+  },
+  "permissions": [
+    "routes:register",
+    "db:own-tables",
+    "watchdog:tasks",
+    "notifications:send",
+    "net:outbound"
+  ],
+  "contributes": {
+    "routes": [
+      {
+        "prefix": "/api/apps/tasks"
+      }
+    ],
+    "windows": [
+      {
+        "id": "tasks.main",
+        "title": "Scheduled Tasks",
+        "body": {
+          "type": "declarative",
+          "spec": "windows/main.json"
+        }
+      }
+    ],
+    "nav": [
+      {
+        "id": "tasks.nav",
+        "label": "Tasks",
+        "icon": "clock",
+        "section": "workspace",
+        "opens": "tasks.main"
+      }
+    ],
+    "skills": [
+      {
+        "id": "aw-tasks",
+        "path": "skills/aw-tasks/SKILL.md",
+        "description": "How to create/edit/run scheduled tasks (terminal CLI prompts or cheap-command-then-notify checks) through aw-app-tasks's /api/apps/tasks/* REST surface."
+      }
+    ]
+  },
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "scheduler_interval_s": {
+        "type": "number",
+        "default": 5,
+        "description": "How often (seconds) the watchdog tick scans for due tasks and fires them. Minimum 1s."
+      },
+      "terminals_api_base": {
+        "type": "string",
+        "description": "Base URL of the workspace's own terminals API (core, e.g. http://127.0.0.1:9123) used by 'terminal'-type tasks to create/reuse a CLI session and write the prompt into it. Leave unset to disable 'terminal'-type task execution — 'agentic_output' tasks work regardless since they run their command directly."
+      }
+    },
+    "required": []
+  },
+  "dependencies": {},
+  "migrations": {}
+}

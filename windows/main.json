@@ -1,0 +1,15 @@
+{
+  "layout": "stack",
+  "regions": [
+    {
+      "id": "main",
+      "widgets": [
+        {
+          "type": "iframe",
+          "title": "Scheduled Tasks",
+          "src": "/api/apps/tasks/ui"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "aw-app-tasks-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ported frontend source for aw-app-tasks. NOT yet built into a plugin bundle — blocked on aw-frontend wiring installPluginHost()/fetchContributions()/<AppSlot> (same gap aw-app-whiteboard and aw-app-presentations flag in their own READMEs). src/TasksTab.jsx mirrors aw-frontend/src/components/TasksTab.jsx (paths updated to this app's own /api/apps/tasks/* routes, Agent Prompt/Agentic-Output-via-Agents-Platform and the Generated-assets/presentations integration trimmed — see the file's own header comment for why), staged for the F6d Vite-lib-build pattern once there is a live plugin host to load into. The actually-working UI today is the server-rendered page at GET /api/apps/tasks/ui (tasks_app/view.py), iframed by windows/main.json."
+}
