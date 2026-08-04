@@ -36,7 +36,7 @@
     "windows": [
       {
         "id": "tasks.main",
-        "title": "Scheduled Tasks",
+        "title": "Tasks",
         "body": {
           "type": "declarative",
           "spec": "windows/main.json"
