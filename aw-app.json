@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "id": "tasks",
   "name": "Scheduled Tasks",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "description": "Scheduled prompts/commands that fire into a reusable CLI session or run a cheap shell check and notify on a notable exit code. Migrated from the aw monolith (src/mcp/tasks.py + tools/agentic_output.py, src/api/task_manager.py + task_scheduler.py + routes/tasks.py, TasksTab.jsx).",
   "tier": "inprocess",
   "requires_ui_refresh": true,
@@ -25,7 +25,9 @@
     "db:own-tables",
     "watchdog:tasks",
     "notifications:send",
-    "net:outbound"
+    "net:outbound",
+    "ui:code",
+    "ui:slots:core.nav.workspace"
   ],
   "contributes": {
     "routes": [
@@ -43,6 +45,13 @@
         }
       }
     ],
+    "frontend": {
+      "mode": "component",
+      "bundle": "ui/dist/tasks.js",
+      "slots": [
+        "core.nav.workspace"
+      ]
+    },
     "skills": [
       {
         "id": "aw-tasks",

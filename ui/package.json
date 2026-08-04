@@ -1,6 +1,14 @@
 {
-  "name": "aw-app-tasks-ui",
+  "name": "tasks-app-ui",
   "version": "0.1.0",
   "private": true,
-  "description": "Ported frontend source for aw-app-tasks. NOT yet built into a plugin bundle — blocked on aw-frontend wiring installPluginHost()/fetchContributions()/<AppSlot> (same gap aw-app-whiteboard and aw-app-presentations flag in their own READMEs). src/TasksTab.jsx mirrors aw-frontend/src/components/TasksTab.jsx (paths updated to this app's own /api/apps/tasks/* routes, Agent Prompt/Agentic-Output-via-Agents-Platform and the Generated-assets/presentations integration trimmed — see the file's own header comment for why), staged for the F6d Vite-lib-build pattern once there is a live plugin host to load into. The actually-working UI today is the server-rendered page at GET /api/apps/tasks/ui (tasks_app/view.py), iframed by windows/main.json."
+  "type": "module",
+  "description": "Component-mode frontend for aw-app-tasks — the Tasks row inside the Workspace nav popover (hover-flyout task list, run-now), ported from aw-workspace-ui's hardcoded WorkspaceNav.jsx block and registered into the core.nav.workspace slot. src/client.js is the framework-free API client; src/plugin.jsx is the integrated-mode entry (register(host)), built as a Vite lib-mode bundle consumed by aw-app.json's contributes.frontend.bundle.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
 }
