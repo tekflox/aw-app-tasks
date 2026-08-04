@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "id": "tasks",
   "name": "Scheduled Tasks",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Scheduled prompts/commands that fire into a reusable CLI session or run a cheap shell check and notify on a notable exit code. Migrated from the aw monolith (src/mcp/tasks.py + tools/agentic_output.py, src/api/task_manager.py + task_scheduler.py + routes/tasks.py, TasksTab.jsx).",
   "tier": "inprocess",
   "requires_ui_refresh": true,
@@ -70,7 +70,7 @@
       },
       "terminals_api_base": {
         "type": "string",
-        "description": "Base URL of the workspace's own terminals API (core, e.g. http://127.0.0.1:9123) used by 'terminal'-type tasks to create/reuse a CLI session and write the prompt into it. Leave unset to disable 'terminal'-type task execution — 'agentic_output' tasks work regardless since they run their command directly."
+        "description": "Base URL of the workspace's own terminals API (core, e.g. http://127.0.0.1:9123) used by 'terminal'-type tasks to create/reuse a CLI session and write the prompt into it. Leave unset to disable 'terminal'-type task execution \u2014 'agentic_output' tasks work regardless since they run their command directly."
       }
     },
     "required": []
