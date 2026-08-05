@@ -218,6 +218,17 @@ export function register(host) {
 
   const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+  // Grid column templates as inline styles, not Tailwind arbitrary-value
+  // classes (`grid-cols-[...]`) — this app's JSX ships in a separate repo
+  // from aw-workspace-ui, whose Tailwind build only scans ITS OWN source.
+  // An arbitrary-value class only renders if the exact same string already
+  // happens to appear somewhere in the host's scanned files; these two
+  // never did, so the table silently fell back to block layout (every
+  // column stacking as its own line) with no error anywhere. Found live
+  // 2026-08-05. Inline styles have no such dependency.
+  const TASK_TABLE_GRID = { display: 'grid', gridTemplateColumns: 'minmax(160px,1fr) 90px minmax(160px,1fr) 60px 120px 70px 140px' };
+  const RUN_HISTORY_GRID = { display: 'grid', gridTemplateColumns: '160px 70px 60px 1fr' };
+
   function fmtTime(epoch) {
     if (!epoch) return '—';
     const d = new Date(epoch * 1000);
@@ -958,7 +969,8 @@ export function register(host) {
           <div
             key={r.id}
             onClick={onOpen}
-            className="grid grid-cols-[160px_70px_60px_1fr] items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-white/[0.03] cursor-pointer"
+            style={RUN_HISTORY_GRID}
+            className="items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-white/[0.03] cursor-pointer"
             title="Click to open this task's agent session"
           >
             <span className="font-mono text-[var(--color-text-muted)]">{fmtTime(r.started_at)}</span>
@@ -1129,7 +1141,7 @@ export function register(host) {
           </div>
         ) : (
           <div className="border border-[var(--color-border)] rounded overflow-hidden">
-            <div className="grid grid-cols-[minmax(160px,1fr)_90px_minmax(160px,1fr)_60px_120px_70px_140px] items-center gap-2 px-3 py-2 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] bg-[var(--color-bg-header)] border-b border-[var(--color-border)]">
+            <div style={TASK_TABLE_GRID} className="items-center gap-2 px-3 py-2 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] bg-[var(--color-bg-header)] border-b border-[var(--color-border)]">
               <span>Name</span>
               <span>CLI</span>
               <span>Schedule</span>
@@ -1148,7 +1160,7 @@ export function register(host) {
                   ref={(el) => { if (el) rowRefs.current[t.id] = el; else delete rowRefs.current[t.id]; }}
                   className="border-b border-[var(--color-border)] last:border-b-0"
                 >
-                  <div className="grid grid-cols-[minmax(160px,1fr)_90px_minmax(160px,1fr)_60px_120px_70px_140px] items-center gap-2 px-3 py-2 hover:bg-white/[0.02]">
+                  <div style={TASK_TABLE_GRID} className="items-center gap-2 px-3 py-2 hover:bg-white/[0.02]">
                     <button
                       onClick={() => setExpanded((p) => ({ ...p, [t.id]: !isExpanded }))}
                       className="flex items-center gap-1.5 text-left min-w-0"
