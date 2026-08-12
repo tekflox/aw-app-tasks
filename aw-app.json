@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "id": "tasks",
   "name": "Scheduled Tasks",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Scheduled prompts/commands that fire into a reusable CLI session or run a cheap shell check and notify on a notable exit code. Migrated from the aw monolith (src/mcp/tasks.py + tools/agentic_output.py, src/api/task_manager.py + task_scheduler.py + routes/tasks.py, TasksTab.jsx).",
   "tier": "inprocess",
   "requires_ui_refresh": true,
@@ -71,21 +71,21 @@
       },
       "terminals_api_base": {
         "type": "string",
-        "description": "Base URL of the workspace's own terminals API (core, e.g. http://127.0.0.1:9123) used by 'terminal'-type tasks to create/reuse a CLI session and write the prompt into it. Leave unset to disable 'terminal'-type task execution — 'agentic_output' tasks work regardless since they run their command directly."
+        "description": "Base URL of the workspace's own terminals API (core, e.g. http://127.0.0.1:9123) used by 'terminal'-type tasks to create/reuse a CLI session and write the prompt into it. Leave unset to disable 'terminal'-type task execution \u2014 'agentic_output' tasks work regardless since they run their command directly."
       },
       "agents_platform_base": {
         "type": "string",
         "default": "http://172.18.0.1:10014",
-        "description": "Base URL of the agents-platform_multitenant instance used by 'agent_prompt'-type tasks. Same value as aw-app-agents-platform-runners's own agents_platform_base config — 172.18.0.1 is the agentic-workspace_default bridge gateway (the real host), the only address reachable from this workspace's network namespace; override if your workspace's subnet differs. Leave unset to disable 'agent_prompt'-type task execution."
+        "description": "Base URL of the agents-platform_multitenant instance used by 'agent_prompt'-type tasks. Same value as aw-app-agents-platform-runners's own agents_platform_base config \u2014 172.18.0.1 is the agentic-workspace_default bridge gateway (the real host), the only address reachable from this workspace's network namespace; override if your workspace's subnet differs. Leave unset to disable 'agent_prompt'-type task execution."
       },
       "agents_platform_token": {
         "type": "string",
-        "description": "aw-backend identity JWT sent as Authorization: Bearer on every call to agents_platform_base — required, agents-platform_multitenant's require_identity() rejects unauthenticated requests with 401. Mint one inside the aw-backend container: python -c \"from src.api.identity_auth import create_identity_jwt; print(create_identity_jwt(<user_id>, [{'workspace': 'aw', 'role': 'owner'}], expiry_seconds=<seconds>))\""
+        "description": "aw-backend identity JWT sent as Authorization: Bearer on every call to agents_platform_base \u2014 required, agents-platform_multitenant's require_identity() rejects unauthenticated requests with 401. Mint one inside the aw-backend container: python -c \"from src.api.identity_auth import create_identity_jwt; print(create_identity_jwt(<user_id>, [{'workspace': 'aw', 'role': 'owner'}], expiry_seconds=<seconds>))\""
       },
       "agents_platform_target": {
         "type": "string",
         "default": "adhoc",
-        "description": "target_slug sent with every 'agent_prompt' run — which Agents Platform Target (repo/workspace context) the agent runs against. 'adhoc' is agents-platform_multitenant's no-repo default target."
+        "description": "target_slug sent with every 'agent_prompt' run \u2014 which Agents Platform Target (repo/workspace context) the agent runs against. 'adhoc' is agents-platform_multitenant's no-repo default target."
       }
     },
     "required": []
