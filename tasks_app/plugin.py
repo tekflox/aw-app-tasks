@@ -56,6 +56,53 @@ class TasksAppPlugin:
 
         log.info("aw-app-tasks activated")
 
+    def register_contributed_task(self, app_id: str, spec: dict) -> bool:
+        """Seed one ``contributes.tasks`` declaration. True if it was created.
+
+        This is the provider side of the workspace's task-contribution
+        protocol (aw-workspace ``src/apps/tasks.py``): an app declares the
+        schedules its features need, and the workspace hands each one here on
+        activation.
+
+        **Create-if-absent, matched by name, never updated.** An existing
+        task of the same name is left exactly as it is — enabled or not,
+        rescheduled or not, command rewritten or not. A schedule is something
+        a user tunes, and an app re-asserting its own version on every boot
+        would silently undo that. Matching on the name (rather than an id the
+        app assigns) also means a task the user already created by hand is
+        recognised instead of duplicated.
+
+        Called from the workspace's activation path, which is synchronous and
+        already guards against exceptions; raising here is safe but pointless.
+        """
+        name = str(spec.get("name") or "").strip()
+        if not name:
+            return False
+        if any(t.get("name") == name for t in self.store.list()):
+            log.info("aw-app-tasks: task %r already exists — leaving it untouched", name)
+            return False
+
+        task_type = spec.get("type", "terminal")
+        notify = spec.get("notify_exit_codes")
+        if isinstance(notify, (list, tuple)):
+            notify = ",".join(str(c) for c in notify)
+        self.store.create(
+            name=name,
+            type=task_type,
+            cli_type=spec.get("cli_type", "terminal"),
+            prompt=spec.get("prompt", "") or "",
+            command=spec.get("command"),
+            notify_exit_codes=notify,
+            schedules=list(spec.get("schedules") or []),
+            # Default OFF: a task that starts firing the moment an app is
+            # installed is a surprise, and the seeded schedule is a
+            # suggestion the user opts into. An app can override, but the
+            # quiet default is the right one.
+            enabled=bool(spec.get("enabled", False)),
+        )
+        log.info("aw-app-tasks: seeded task %r contributed by %s", name, app_id)
+        return True
+
     async def deactivate(self) -> None:
         log.info("aw-app-tasks deactivated")
 
