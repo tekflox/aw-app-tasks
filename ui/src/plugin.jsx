@@ -968,10 +968,12 @@ export function register(host) {
         {runs.map((r) => (
           <div
             key={r.id}
-            onClick={onOpen}
+            onClick={() => onOpen(r)}
             style={RUN_HISTORY_GRID}
             className="items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-white/[0.03] cursor-pointer"
-            title="Click to open this task's agent session"
+            title={r.session_id
+              ? 'Click to open the terminal this run used'
+              : 'This run never reached a terminal session'}
           >
             <span className="font-mono text-[var(--color-text-muted)]">{fmtTime(r.started_at)}</span>
             <span className="text-[var(--color-text-muted)]">{r.trigger}</span>
@@ -1107,10 +1109,36 @@ export function register(host) {
       }
     };
 
-    // The aw-app-tasks port doesn't carry the monolith's /open route yet (no
-    // agent-session-id-open machinery — see the app's manager.py docstring),
-    // so this button stays disabled below rather than call a route that 404s.
-    const openSession = async (_task) => {};
+    // Open the terminal a `terminal`-type task is bound to — the session it
+    // actually ran its commands in, so you can read the output.
+    //
+    // The monolith did this through an /open route; this port has no such
+    // route and needs none. A task already stores the id of the PTY it fired
+    // into (`session_id`, set by manager.py::_run_terminal on the first run),
+    // and the shell owns the one function that can raise a terminal window,
+    // exposing it as `window.__awOpenTerminal` — the same handle the shell's
+    // own GitHub section uses. That is the whole implementation.
+    //
+    // A task that has never run has no session_id yet; the button is disabled
+    // for that case rather than opening an empty window.
+    //
+    // `run` is optional: clicking a row in the run history opens the session
+    // THAT run used, which is not always the task's current one — reuse can
+    // be off, and a session the user closed is replaced on the next fire.
+    const openSession = async (task, run) => {
+      const sessionId = run?.session_id || task?.session_id;
+      if (!sessionId) {
+        setError(run
+          ? 'That run never reached a terminal session — see its error.'
+          : 'This task has no terminal session yet — run it once first.');
+        return;
+      }
+      if (typeof window.__awOpenTerminal !== 'function') {
+        setError('This workspace shell cannot open terminal windows.');
+        return;
+      }
+      window.__awOpenTerminal(sessionId);
+    };
 
     return (
       <div className="p-4 w-full">
@@ -1233,9 +1261,11 @@ export function register(host) {
                       </button>
                       <button
                         onClick={() => openSession(t)}
-                        title="Opening a task's bound session isn't ported yet"
-                        disabled
-                        className="p-1 rounded hover:bg-white/10 text-amber-400 disabled:opacity-30"
+                        title={t.session_id
+                          ? 'Open the terminal this task ran in'
+                          : 'No terminal session yet — run the task once'}
+                        disabled={!t.session_id}
+                        className="p-1 rounded hover:bg-white/10 text-amber-400 disabled:opacity-30 disabled:cursor-not-allowed"
                       >
                         <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <polyline points="4 17 10 11 4 5" />
@@ -1269,7 +1299,7 @@ export function register(host) {
 
                   {isExpanded && (
                     <>
-                      <RunHistory task={t} onOpen={() => openSession(t)} />
+                      <RunHistory task={t} onOpen={(run) => openSession(t, run)} />
                       <GeneratedAssets task={t} presentations={presentationsForTask(t)} />
                     </>
                   )}
