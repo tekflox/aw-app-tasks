@@ -99,6 +99,16 @@ class TasksAppPlugin:
             # suggestion the user opts into. An app can override, but the
             # quiet default is the right one.
             enabled=bool(spec.get("enabled", False)),
+            # type='agent_prompt' routing. Dropped until 2026-08-13, which
+            # made an app-contributed agent_prompt task unfireable: the row
+            # was created with agent_slug NULL, and _run_agent_prompt has
+            # nothing to dispatch to. An app that ships both an agent
+            # (contributes.agents) and the schedule driving it has to be able
+            # to name that agent here. aw-workspace validates the pair at
+            # install time (src/apps/manifest.py), so a slug is present
+            # whenever the type is agent_prompt.
+            agent_slug=(str(spec.get("agent_slug") or "").strip() or None),
+            reuse_session=bool(spec.get("reuse_session", False)),
         )
         log.info("aw-app-tasks: seeded task %r contributed by %s", name, app_id)
         return True
