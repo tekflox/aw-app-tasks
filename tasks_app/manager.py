@@ -121,7 +121,11 @@ class TaskManager:
 
         prompt = (task.get("prompt") or "").rstrip()
         session_name = f"Task: {task['name']}"
-        cmd = task.get("cli_type") or "terminal"
+        # cli_type "terminal" means a plain login shell, NOT a command called
+        # "terminal" — core would run `bash -lc "cd …; terminal"` and the PTY
+        # would die on command-not-found before the prompt ever landed.
+        cli_type = (task.get("cli_type") or "terminal").strip()
+        cmd = None if cli_type in ("", "terminal") else cli_type
         sid = await terminal_client.ensure_session(
             base, name=session_name, command=cmd, session_id=task.get("session_id"),
         )
