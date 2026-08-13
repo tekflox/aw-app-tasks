@@ -1,5 +1,5 @@
 """Self-contained vanilla-JS view for the Tasks window, served as
-``GET /api/apps/tasks/ui`` and iframed by ``windows/main.json`` (the same
+``GET /api/apps/tasks/panel`` and iframed by ``windows/main.json`` (the same
 "serve our own HTML, iframe it from the declarative window" pattern
 ``aw-app-whiteboard`` uses for ``/api/apps/whiteboard/view/{id}`` — see that
 app's ``routes.py``/``viewer.py``).

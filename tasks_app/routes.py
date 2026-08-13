@@ -147,7 +147,11 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager) -> FastAPI:
             "next_fire_at": min(valid_fires) if valid_fires else None,
         }
 
-    @api.get("/ui")
+    # NOT "/ui": core serves GET /api/apps/{slug}/ui/{path:path} (component
+    # bundles) and matches it BEFORE an app's Mount, so this route was
+    # unreachable — refused at load since 2026-08-13, which kept the whole app
+    # from installing.
+    @api.get("/panel")
     async def ui():
         return HTMLResponse(content=build_view_html())
 
