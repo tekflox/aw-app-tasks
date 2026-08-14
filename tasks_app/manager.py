@@ -60,50 +60,110 @@ class TaskManager:
         # mid-run from a previous tick (mirrors the monolith's
         # TaskScheduler._firing set).
         self._firing: set[str] = set()
+        # Strong refs to the detached run bodies started by start_task.
+        self._background: set[asyncio.Task] = set()
 
     def is_firing(self, task_id: str) -> bool:
         return task_id in self._firing
 
+    def _new_run(self, trigger: str) -> dict:
+        return {
+            "id": self.store.next_run_id(),
+            "started_at": _now(),
+            "trigger": trigger,
+            "status": "running",
+            "session_id": None,
+            "exit_code": None,
+            "notified": None,
+            "output": None,
+            "error": None,
+        }
+
+    async def start_task(self, task_id: str, *, trigger: str = "manual") -> dict:
+        """Kick a run off and return as soon as it is *started*, with the run
+        row already persisted as ``status="running"``.
+
+        This is the path anything time-bounded should use — an HTTP handler,
+        or the scheduler tick. Awaiting the whole run instead (``run_task``)
+        holds the caller for as long as the work takes, which for an
+        ``agent_prompt`` is up to ``agents_platform_client.DEFAULT_TIMEOUT_S``
+        (30 minutes). Nothing in front of this workspace keeps a request open
+        that long: the tunnel edge cuts at 30s with ``502 workspace
+        offline``, the UI reads that as "the task failed", and every retry
+        click starts *another* real run behind the dead connection. The
+        scheduler had the mirror-image problem — ``_tick`` awaited inline, so
+        one slow task starved every other schedule for half an hour.
+        """
+        task = self.store.get(task_id)
+        if not task:
+            raise KeyError(task_id)
+
+        run = self._new_run(trigger)
+        self._firing.add(task_id)
+        self.store.insert_run(task_id, run)
+        # Hold a strong reference — asyncio only keeps a weak one, so a
+        # fire-and-forget task can otherwise be garbage collected mid-run.
+        bg = asyncio.create_task(self._finish_task(task, run))
+        self._background.add(bg)
+        bg.add_done_callback(self._background.discard)
+        return run
+
     async def run_task(self, task_id: str, *, trigger: str = "manual") -> dict:
+        """Run a task to completion and return the finished run. Blocks for
+        the full duration — prefer :meth:`start_task` for anything reached
+        over HTTP or driven by the scheduler."""
         task = self.store.get(task_id)
         if not task:
             raise KeyError(task_id)
 
         self._firing.add(task_id)
         try:
-            run: dict = {
-                "id": self.store.next_run_id(),
-                "started_at": _now(),
-                "trigger": trigger,
-                "status": "running",
-                "session_id": None,
-                "exit_code": None,
-                "notified": None,
-                "output": None,
-                "error": None,
-            }
-            task_type = task.get("type") or "terminal"
-            try:
-                if task_type == "terminal":
-                    await self._run_terminal(task, run)
-                elif task_type == "agentic_output":
-                    await self._run_agentic_output(task, run)
-                elif task_type == "agent_prompt":
-                    await self._run_agent_prompt(task, run)
-                else:
-                    run["status"] = "error"
-                    run["error"] = f"unknown task type {task_type!r}"
-            except Exception as e:  # noqa: BLE001 - task run must never crash the scheduler
-                logger.exception("Task %s run failed: %s", task_id, e)
-                run["status"] = "error"
-                run["error"] = str(e)
-
+            run = self._new_run(trigger)
+            await self._dispatch(task, run)
             self.store.record_run(task_id, run)
-            if self._ctx.has("notifications:send") and (trigger != "cron" or run["status"] != "ok"):
-                await self._notify_run_outcome(task, run)
+            await self._maybe_notify(task, run)
             return run
         finally:
             self._firing.discard(task_id)
+
+    async def _finish_task(self, task: dict, run: dict) -> None:
+        """Body of a run started by :meth:`start_task` — dispatch, settle the
+        row, notify. Runs detached, so it must never raise."""
+        task_id = task["id"]
+        try:
+            await self._dispatch(task, run)
+            self.store.finish_run(task_id, run)
+            await self._maybe_notify(task, run)
+        except Exception:  # noqa: BLE001 - detached: nothing would surface it
+            logger.exception("Task %s: recording the run outcome failed", task_id)
+        finally:
+            self._firing.discard(task_id)
+
+    async def _dispatch(self, task: dict, run: dict) -> None:
+        """Run the task body for its type, folding any failure into the run
+        dict — a task run must never crash the scheduler."""
+        task_id = task["id"]
+        task_type = task.get("type") or "terminal"
+        try:
+            if task_type == "terminal":
+                await self._run_terminal(task, run)
+            elif task_type == "agentic_output":
+                await self._run_agentic_output(task, run)
+            elif task_type == "agent_prompt":
+                await self._run_agent_prompt(task, run)
+            else:
+                run["status"] = "error"
+                run["error"] = f"unknown task type {task_type!r}"
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Task %s run failed: %s", task_id, e)
+            run["status"] = "error"
+            run["error"] = str(e)
+
+    async def _maybe_notify(self, task: dict, run: dict) -> None:
+        if self._ctx.has("notifications:send") and (
+            run.get("trigger") != "cron" or run["status"] != "ok"
+        ):
+            await self._notify_run_outcome(task, run)
 
     # ------------------------------------------------------------------
     # terminal

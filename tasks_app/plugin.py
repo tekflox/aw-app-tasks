@@ -131,6 +131,9 @@ class TasksAppPlugin:
             if self.manager.is_firing(task["id"]):
                 continue
             try:
-                await self.manager.run_task(task["id"], trigger="cron")
+                # start, don't await — a 30-minute agent_prompt run would
+                # otherwise block this tick and starve every other schedule.
+                # The _firing guard above still prevents a re-fire.
+                await self.manager.start_task(task["id"], trigger="cron")
             except Exception:
                 log.exception("Task %s: scheduled fire failed", task["id"])

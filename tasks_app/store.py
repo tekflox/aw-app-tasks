@@ -212,14 +212,16 @@ class TaskStore:
         )
         return [self._run_to_dict(r) for r in rows]
 
-    def record_run(self, task_id: str, run: dict) -> dict | None:
-        """Insert the run row, bump the task's last_run_*, prune fired
-        `once` schedules and recompute next_fire_at. Returns the updated
-        task dict, or None if the task no longer exists."""
-        task = self.get(task_id)
-        if not task:
-            return None
+    def insert_run(self, task_id: str, run: dict) -> None:
+        """Persist a run row at the moment it starts, while it is still
+        ``status="running"``, and show that on the task itself.
 
+        The manager writes the row up-front (rather than only once the work
+        is done) so a long run is visible in the UI *while* it runs — the
+        list already renders ``last_run_status == "running"`` as its own
+        badge. Without this a slow run left the UI looking untouched, which
+        reads as "the run never started" and invites a second click.
+        """
         self._ctx.db.execute(
             _RUNS_TABLE,
             """
@@ -238,6 +240,58 @@ class TaskStore:
                 "error": run.get("error"),
             },
         )
+        self._ctx.db.execute(
+            _TASKS_TABLE,
+            "UPDATE {table} SET last_run_at = :last_run_at, "
+            "last_run_status = :last_run_status WHERE id = :id",
+            {
+                "last_run_at": run.get("started_at"),
+                "last_run_status": run.get("status"),
+                "id": task_id,
+            },
+        )
+
+    def finish_run(self, task_id: str, run: dict) -> dict | None:
+        """Write a started run's final outcome back onto its row, bump the
+        task's last_run_*, prune fired `once` schedules and recompute
+        next_fire_at. Returns the updated task dict, or None if the task no
+        longer exists. Pairs with :meth:`insert_run`."""
+        task = self.get(task_id)
+        if not task:
+            return None
+
+        self._ctx.db.execute(
+            _RUNS_TABLE,
+            """
+            UPDATE {table} SET
+                status = :status, session_id = :session_id, exit_code = :exit_code,
+                notified = :notified, output = :output, error = :error
+            WHERE id = :id
+            """,
+            {
+                "id": run["id"], "status": run.get("status"),
+                "session_id": run.get("session_id"), "exit_code": run.get("exit_code"),
+                "notified": run.get("notified"), "output": run.get("output"),
+                "error": run.get("error"),
+            },
+        )
+        return self._settle_task(task, run)
+
+    def record_run(self, task_id: str, run: dict) -> dict | None:
+        """Insert an already-finished run row and settle the task in one
+        step — the one-shot path, for a run that was never announced as
+        ``running`` first. Returns the updated task dict, or None if the
+        task no longer exists."""
+        task = self.get(task_id)
+        if not task:
+            return None
+        self.insert_run(task_id, run)
+        return self._settle_task(task, run)
+
+    def _settle_task(self, task: dict, run: dict) -> dict | None:
+        """Bump last_run_*, prune fired `once` schedules, recompute
+        next_fire_at — the task-side half of recording a finished run."""
+        task_id = task["id"]
 
         # Prune any `once` schedule that has already fired, recompute next_fire.
         now = _now()

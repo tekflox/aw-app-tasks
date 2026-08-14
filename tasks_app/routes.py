@@ -110,8 +110,11 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager) -> FastAPI:
 
     @api.post("/tasks/{task_id}/run")
     async def run_task(task_id: str):
+        # Returns as soon as the run is *started*, with the run row already
+        # persisted as status="running" — see TaskManager.start_task for why
+        # awaiting the whole run here is not survivable over HTTP.
         try:
-            run = await manager.run_task(task_id, trigger="manual")
+            run = await manager.start_task(task_id, trigger="manual")
         except KeyError:
             raise HTTPException(status_code=404, detail="Not found")
         return {"success": True, "run": run}
