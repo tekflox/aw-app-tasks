@@ -52,8 +52,15 @@ caller was really asking, off the run rows this app already keeps.
    expression, a `weekly` with no `days`, and so on.
 
 Both apply to `update_task` too, whenever the patch touches
-`type`/`agent_slug`/`command`. An *already* broken task can still be renamed or
-disabled — otherwise there'd be no way to turn one off.
+`type`/`agent_slug`/`command` — **or arms the task**: any patch to
+`enabled`/`schedules` that leaves it enabled is checked the same way, because
+switching on a slug-less `agent_prompt` starts the same silent failure as
+creating one (the schedule fires, nothing dispatches, the row still looks
+healthy). Fix and enable in one call — `{"enabled": true, "agent_slug": "…"}` —
+and it goes through.
+
+An *already* broken task can still be renamed, disabled, or edited while it
+stays off; otherwise there'd be no way to turn one off or repair it.
 
 ### `run_task` and waiting
 

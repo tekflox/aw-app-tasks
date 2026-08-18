@@ -89,6 +89,13 @@ def normalize_create(data: dict) -> tuple[dict | None, str | None]:
 # nowhere, so a patch that includes one gets the full creation check.
 _DISPATCH_FIELDS = ("type", "agent_slug", "command")
 
+# These two decide whether the scheduler will fire the task at all. A patch
+# that touches either and leaves the task *enabled* is arming it, and arming a
+# slug-less `agent_prompt` recreates the exact silent failure the guard exists
+# to prevent — the schedule fires, nothing dispatches, the row still looks
+# healthy. So arming earns the same check as editing dispatch itself.
+_ARMING_FIELDS = ("enabled", "schedules")
+
 
 def validate_patch(existing: dict, patch: dict) -> str | None:
     """None if applying ``patch`` to ``existing`` leaves a task that can still
@@ -98,17 +105,19 @@ def validate_patch(existing: dict, patch: dict) -> str | None:
     an existing terminal task to ``agent_prompt`` without naming an agent
     kills it exactly as thoroughly as creating it that way.
 
-    Deliberately scoped to patches that touch dispatch: a workspace may
+    Scoped to patches that touch dispatch (``_DISPATCH_FIELDS``) or arm the
+    task (``_ARMING_FIELDS`` with the merged row left enabled). A workspace may
     already hold a slug-less ``agent_prompt`` row from before this check
-    existed, and refusing every edit to it would leave no way to rename or
-    even *disable* the thing. Renaming a broken task stays allowed; making a
-    task broken does not.
+    existed, and refusing every edit to it would leave no way to rename or even
+    *disable* the thing — so renaming a broken task stays allowed, and so does
+    turning it off. Making a task broken does not, and neither does switching a
+    broken one on.
     """
     if "schedules" in patch:
         err = validate_schedules(patch["schedules"])
         if err:
             return err
-    if not any(f in patch for f in _DISPATCH_FIELDS):
+    if not (any(f in patch for f in _DISPATCH_FIELDS) or _arms_the_task(existing, patch)):
         return None
 
     merged = {**existing, **patch}
@@ -123,3 +132,15 @@ def validate_patch(existing: dict, patch: dict) -> str | None:
     if task_type == "agentic_output" and not (merged.get("command") or "").strip():
         return "command is required for agentic_output"
     return None
+
+
+def _arms_the_task(existing: dict, patch: dict) -> bool:
+    """True when the patch changes whether/when the scheduler fires this task
+    and leaves it enabled.
+
+    Turning a task *off* — or editing the schedules of one that stays off —
+    isn't arming, which is what keeps an already-broken row disable-able.
+    """
+    if not any(f in patch for f in _ARMING_FIELDS):
+        return False
+    return bool({**existing, **patch}.get("enabled"))

@@ -194,6 +194,78 @@ def test_update_can_still_disable_an_already_broken_task(store, manager):
     assert store.updated == [("task-broken", {"enabled": False})]
 
 
+def _broken_and_off(store):
+    """A slug-less agent_prompt row, disabled — the state a workspace is left
+    in after someone turns off a task from before the guard existed."""
+    store.tasks["task-broken"] = {"id": "task-broken", "name": "old", "runs": [],
+                                  "type": "agent_prompt", "agent_slug": None,
+                                  "enabled": False,
+                                  "schedules": [{"kind": "daily", "time": "09:00"}]}
+
+
+@pytest.mark.parametrize("patch", [
+    {"enabled": True},
+    {"enabled": True, "name": "renamed"},
+    {"enabled": True, "schedules": [{"kind": "daily", "time": "07:00"}]},
+])
+def test_update_cannot_switch_a_broken_task_back_on(store, manager, patch):
+    """The direction the guard is really for. `enabled`/`schedules` are not
+    dispatch fields, so a patch of only those used to skip the slug check
+    entirely — and switching on a slug-less agent_prompt is exactly the silent
+    failure (schedule fires, nothing dispatches) the guard exists to stop."""
+    _broken_and_off(store)
+    resp = call(store, manager, "update_task", {"task_id": "task-broken", **patch})
+    assert resp["result"]["isError"] is True
+    assert "agent_slug" in text_of(resp)
+    assert store.updated == []
+
+
+def test_update_cannot_give_a_live_broken_task_a_schedule(store, manager):
+    """The other half of arming: the row is already enabled, so handing it a
+    schedule is what makes it start firing into nothing."""
+    store.tasks["task-live-broken"] = {"id": "task-live-broken", "name": "old", "runs": [],
+                                       "type": "agent_prompt", "agent_slug": None,
+                                       "enabled": True, "schedules": []}
+    resp = call(store, manager, "update_task",
+                {"task_id": "task-live-broken",
+                 "schedules": [{"kind": "daily", "time": "07:00"}]})
+    assert resp["result"]["isError"] is True
+    assert "agent_slug" in text_of(resp)
+    assert store.updated == []
+
+
+def test_arming_is_fine_once_the_patch_also_supplies_the_slug(store, manager):
+    """Refusing to arm a broken task must not mean it can never be repaired —
+    fixing and enabling it in one call is the obvious way to do that."""
+    _broken_and_off(store)
+    resp = call(store, manager, "update_task",
+                {"task_id": "task-broken", "enabled": True, "agent_slug": "telegram-sonnet"})
+    assert resp["result"]["isError"] is False
+    assert store.updated == [("task-broken", {"enabled": True, "agent_slug": "telegram-sonnet"})]
+
+
+def test_a_broken_task_that_stays_off_can_still_be_edited(store, manager):
+    """Editing the schedules of a task that remains disabled arms nothing, so
+    it stays allowed — same reasoning as being able to disable one."""
+    _broken_and_off(store)
+    resp = call(store, manager, "update_task",
+                {"task_id": "task-broken", "schedules": [], "enabled": False})
+    assert resp["result"]["isError"] is False
+    assert store.updated == [("task-broken", {"schedules": [], "enabled": False})]
+
+
+def test_arming_a_healthy_task_is_not_obstructed(store, manager):
+    """The guard is about broken rows; a task with a slug enables normally."""
+    store.tasks["task-ok"] = {"id": "task-ok", "name": "ok", "runs": [],
+                              "type": "agent_prompt", "agent_slug": "telegram-sonnet",
+                              "enabled": False, "schedules": []}
+    resp = call(store, manager, "update_task",
+                {"task_id": "task-ok", "enabled": True,
+                 "schedules": [{"kind": "daily", "time": "09:00"}]})
+    assert resp["result"]["isError"] is False
+    assert store.updated and store.updated[0][0] == "task-ok"
+
+
 # ── the rest of the cycle ──────────────────────────────────────────────────
 
 def test_list_and_get(store, manager):
