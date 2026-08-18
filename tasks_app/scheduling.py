@@ -160,6 +160,9 @@ def compute_next_fire(task: dict, base: float | None = None) -> float | None:
     return min(candidates) if candidates else None
 
 
+SCHEDULE_KINDS = ("once", "daily", "weekly", "monthly", "cron")
+
+
 def validate_schedule(sched: dict) -> str | None:
     """Return None if valid, else a human-readable error string."""
     if not isinstance(sched, dict):

@@ -1,20 +1,66 @@
 ---
 name: aw-tasks
 description: >-
-  How to create/edit/run/delete scheduled tasks through aw-app-tasks's
-  /api/apps/tasks/* REST surface — a task fires a prompt into a reusable CLI
-  session ("terminal" type) or runs a cheap command and notifies on a
-  notable exit code ("agentic_output" type), on a schedule (once/daily/
-  weekly/monthly/cron) or manually. Load this whenever a task needs to
-  create, inspect, or trigger a scheduled/recurring job in this workspace.
+  Create/edit/run/delete this workspace's scheduled tasks — either through the
+  aw-tasks MCP tools (list_tasks, get_task, create_task, update_task,
+  delete_task, run_task, open_task, list_clis) or the /api/apps/tasks/* REST
+  surface behind them. A task calls an Agents Platform agent
+  ("agent_prompt"), runs a cheap command and only pays for an agent when the
+  exit code is notable ("agentic_output"), or writes a prompt into a reusable
+  CLI session ("terminal"), on a schedule (once/daily/weekly/monthly/cron) or
+  manually. Load this whenever a task needs to create, inspect, or trigger a
+  scheduled/recurring job in this workspace.
 ---
 
 # aw-tasks — scheduled prompts and command checks
 
-This app ports the monolith's Scheduled Tasks feature
-(`src/mcp/tasks.py` + `tools/agentic_output.py` + `src/api/task_manager.py`)
-into a decoupled `aw-workspace` app. Every endpoint below is relative to
-`/api/apps/tasks` (e.g. `GET /api/apps/tasks/tasks`).
+This app ports the monolith's Scheduled Tasks feature (`src/mcp/tasks.py` +
+`tools/agentic_output.py` + `src/api/task_manager.py`) into a decoupled
+`aw-workspace` app. There are two ways in and they sit on the same store:
+
+* **MCP** — the eight tools below, through `aw-gateway`. **Prefer this.**
+* **REST** — `/api/apps/tasks/*`, for curl, the UI and tests.
+
+## MCP tools
+
+Through the gateway they are named `mcp__aw-gateway__aw__tasks__<tool>`
+(drop the `aw-gateway__` layer if your session mounts `tasks` directly).
+
+| Tool | Does |
+|---|---|
+| `list_tasks` | Every task, summarised: type, enabled, schedules, next fire, last outcome. |
+| `get_task` | One task in full, with its recent `runs[]`. |
+| `create_task` | Create. Validated first — see the two refusals below. |
+| `update_task` | Patch; send only what changes. |
+| `delete_task` | Soft-delete (hidden + disabled; run history survives). |
+| `run_task` | Fire now, regardless of schedule or `enabled`. |
+| `open_task` | **What happened last run**: status, exit code, output, error, and the Agents Platform run id. |
+| `list_clis` | The agent slugs you may pass as `agent_slug`, plus valid `cli_type`s and schedule kinds. |
+
+`open_task` is deliberately **not** the monolith's tool of the same name. There
+it returned a `terminal` task's bound CLI session plus its scrollback. That
+type has never worked properly in this workspace, and what tasks actually run
+here is `agent_prompt`/`agentic_output` — so the tool answers the question the
+caller was really asking, off the run rows this app already keeps.
+
+### Two things `create_task` refuses
+
+1. **An `agent_prompt` or `agentic_output` task with no `agent_slug`.** The row
+   would be created, look healthy in the UI, and never dispatch. Call
+   `list_clis` for the slugs this workspace can reach rather than guessing.
+2. **A schedule the scheduler can't compute a next fire from** — a bad cron
+   expression, a `weekly` with no `days`, and so on.
+
+Both apply to `update_task` too, whenever the patch touches
+`type`/`agent_slug`/`command`. An *already* broken task can still be renamed or
+disabled — otherwise there'd be no way to turn one off.
+
+### `run_task` and waiting
+
+`run_task` starts the run and returns; an `agent_prompt` run may take up to 30
+minutes and nothing in front of this workspace holds a request that long (the
+tunnel edge cuts at 30s). Pass `wait_s` (max 120) to be held for a short run,
+otherwise come back with `open_task`.
 
 ## Task shape
 
@@ -22,44 +68,47 @@ into a decoupled `aw-workspace` app. Every endpoint below is relative to
 {
   "id": "task-ab12cd34ef56",
   "name": "Daily standup digest",
-  "type": "terminal" | "agentic_output",
-  "cli_type": "terminal",            // terminal type only — the CLI the session runs
-  "prompt": "…",                     // terminal type — text written into the session
-  "command": "…",                    // agentic_output type — shell command to run
-  "notify_exit_codes": null,         // agentic_output type — null/"" = any non-zero notifies
+  "type": "agent_prompt" | "agentic_output" | "terminal",
+  "prompt": "…",                     // agent_prompt: sent to the agent
+  "command": "…",                    // agentic_output: shell command to run
+  "agent_slug": "telegram-sonnet",   // REQUIRED for the two agent types
+  "reuse_session": false,            // agent types: resume the same conversation
+  "notify_exit_codes": null,         // agentic_output — null/"" = any non-zero is notable
+  "cli_type": "terminal",            // terminal type only
   "schedules": [{"kind": "cron", "expr": "0 9 * * *"}],
   "enabled": true,
-  "session_id": "…",                 // terminal type — bound CLI session, once run
   "next_fire_at": 1234567890.0,      // epoch seconds, or null (manual-only / disabled)
   "last_run_at": 1234567890.0,
   "last_run_status": "ok" | "error",
+  "ap_session_id": "…",              // agent types, when reuse_session is on
   "runs": [{"id": "run-…", "started_at": …, "trigger": "manual"|"cron",
             "status": "ok"|"error", "exit_code": 0, "notified": false,
-            "output": "…", "error": null}]
+            "session_id": "…", "output": "…", "error": null}]
 }
 ```
 
-## Two task types
+## Three task types
 
-* **`terminal`** — on fire, ensures a reusable CLI session (named
-  `"Task: <name>"`) exists via the workspace's terminals API and writes the
-  prompt into it. Needs `config.terminals_api_base` set on this app (Apps
-  card → Configure) — without it, runs record a clear `status=error`
-  explaining that, instead of silently doing nothing.
-* **`agentic_output`** — runs `command` directly (no LLM call). If the exit
-  code is *notable* (any non-zero by default, or explicitly listed in
-  `notify_exit_codes`), fires a workspace notification with the command,
-  exit code, and (truncated) output. This is the type to reach for when you
-  just want "run this check and tell me if it breaks" with zero cost on the
-  happy path.
+* **`agent_prompt`** — sends `prompt` to the Agents Platform agent named by
+  `agent_slug` and records its reply. Needs `agents_platform_base` +
+  `agents_platform_token` configured on this app.
+* **`agentic_output`** — runs `command` first (no LLM). Only if the exit code
+  is *notable* (any non-zero by default, or the explicit list in
+  `notify_exit_codes`) does it hand the output to `agent_slug` to interpret.
+  This is the type for "run this check and tell me if it breaks", at zero cost
+  on the happy path.
+* **`terminal`** — ensures a reusable CLI session named `"Task: <name>"` and
+  writes `prompt` into it. Needs `config.terminals_api_base`; without it runs
+  record a clear `status=error` rather than silently doing nothing. The least
+  reliable of the three — prefer `agent_prompt`.
 
-`agent_prompt` (call an Agents Platform agent) from the monolith is **not**
-supported here — no Agents Platform app dependency is wired up yet.
+**A task's `command` runs inside the aw-workspace container.** It has `docker`
+but no `podman`, and none of an agent runner's tooling.
 
 ## Schedules
 
-Combine any number of entries in `schedules[]`; the task fires whenever the
-soonest one is due. `once` schedules are dropped after firing.
+Combine any number of entries; the task fires whenever the soonest is due.
+`once` schedules are dropped after firing. Empty list = manual-only.
 
 ```
 {"kind": "once",    "at": "2026-08-10T09:00"}
@@ -69,32 +118,41 @@ soonest one is due. `once` schedules are dropped after firing.
 {"kind": "cron",    "expr": "0 9 * * *"}
 ```
 
-Empty `schedules` = manual-only (fires only via the `run` endpoint below).
-`POST /validate-cron {"cron": "…"}` and `POST /preview-schedules
-{"schedules": [...]}` let you check a schedule before saving it.
+## REST surface
 
-## Endpoints
+Every path below is relative to `/api/apps/tasks`.
 
 | Method & path | Does |
 |---|---|
 | `GET /tasks` | List every task (with embedded `runs[]`, newest first). |
-| `POST /tasks` | Create. Body: `name` (required), `type`, `prompt`/`command`, `schedules`, `enabled`. |
+| `POST /tasks` | Create. Same validation as `create_task`. |
 | `GET /tasks/{id}` | Fetch one task. |
 | `PUT /tasks/{id}` | Patch — only send the fields you want to change. |
-| `DELETE /tasks/{id}` | Soft-delete (hidden, disabled). |
-| `POST /tasks/{id}/run` | Fire now (`trigger=manual`), returns the run row. |
-| `GET /ui` | The clickable Tasks window (vanilla HTML/JS, no build step). |
-
-## Example: create-then-run an agentic_output task
+| `DELETE /tasks/{id}` | Soft-delete. |
+| `POST /tasks/{id}/run` | Fire now; returns as soon as the run has started. |
+| `GET /agents` | Agents Platform agent slugs (what `list_clis` wraps). |
+| `POST /validate-cron` | `{"cron": "…"}` → is it valid, and when does it next fire. |
+| `POST /preview-schedules` | `{"schedules": [...]}` → per-entry validity + next fire. |
+| `GET /panel` | The clickable Tasks window. **Not `/ui`** — core serves app bundles there and shadows an app's own route. |
 
 ```bash
 curl -sX POST "$BASE/api/apps/tasks/tasks" -H 'content-type: application/json' -d '{
   "name": "ci-health-watch", "type": "agentic_output",
-  "command": "./aw test aw --unit", "notify_exit_codes": null,
-  "schedules": [], "enabled": true
+  "command": "aw-workspace-cli doctor", "agent_slug": "telegram-sonnet",
+  "notify_exit_codes": null, "schedules": [], "enabled": true
 }'
 curl -sX POST "$BASE/api/apps/tasks/tasks/<id>/run"
 ```
 
-The run's `exit_code`/`output`/`notified` land in the returned run row and
-in `GET /tasks/<id>`'s `runs[]` — no need to poll a separate log.
+## If the MCP tools aren't there
+
+`contributes.mcp` in the manifest only *declares* the surface. The gateway
+finds an upstream by scanning each installed app dir for an `mcp.json`, which
+this app writes itself on activation (`tasks_app/mcp/self_register.py`). So:
+
+* No `tasks` tools at all → the app didn't activate, or `mcp.json` wasn't
+  written. Check `aw-workspace-cli logs`, and that
+  `<installed-app-dir>/mcp.json` exists.
+* Tools missing right after an install/update → **restart the mcp-gateway.**
+  This app is `tier: inprocess`, so `aw-workspace-cli restart tasks` does not
+  apply, and the gateway does not re-scan on its own.

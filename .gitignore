@@ -54,6 +54,12 @@ playwright-report/
 coverage/
 ui/coverage/
 
+# Generated at runtime by tasks_app/mcp/self_register.py so aw-mcp-gateway's
+# app-scan can find our /mcp endpoint. It carries this workspace's live
+# AW_WORKSPACE_API_KEY — never commit it. (A workspace key has already been
+# leaked once this way, from a different app's repo.)
+/mcp.json
+
 # Runtime scratch files
 .tmp/
 tmp/

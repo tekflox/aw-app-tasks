@@ -13,18 +13,19 @@ Decision 2/6) but otherwise match 1:1:
     POST   /api/tasks/{id}/run        POST   /tasks/{id}/run
     POST   /api/tasks/validate-cron   POST   /validate-cron
     POST   /api/tasks/preview-sched.  POST   /preview-schedules
-                                       GET    /ui   (vanilla-JS view, see view.py)
+                                       GET    /panel (vanilla-JS view, see view.py)
+                                       POST   /mcp   (MCP over Streamable HTTP)
 
-``open_task`` (resolve+open the bound agent conversation) is not ported —
-it depended on the monolith's agent-session-id capture machinery, which this
-app does not reproduce (see manager.py's module docstring).
+The MCP surface at ``/mcp`` re-exposes the monolith's ``src/mcp/tasks.py``
+tools against the same store/manager these routes use — see
+``mcp/http_handler.py``, and ``validation.py`` for the checks both share.
 """
 from __future__ import annotations
 
 from fastapi import Body, FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from . import agents_platform_client, scheduling
+from . import agents_platform_client, scheduling, validation
 from .manager import TaskManager
 from .store import TaskStore
 from .view import build_view_html
@@ -49,34 +50,12 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager) -> FastAPI:
 
     @api.post("/tasks")
     async def create_task(data: dict = Body(...)):
-        name = (data.get("name") or "").strip()
-        if not name:
-            raise HTTPException(status_code=400, detail="name is required")
-        task_type = (data.get("type") or "terminal").strip()
-        cli_type = (data.get("cli_type") or "terminal").strip() if task_type == "terminal" else "terminal"
-        command = data.get("command") or None
-        if task_type == "agentic_output" and not command:
-            raise HTTPException(status_code=400, detail="command is required for agentic_output")
-        agent_slug = (data.get("agent_slug") or "").strip() or None
-        if task_type in ("agent_prompt", "agentic_output") and not agent_slug:
-            raise HTTPException(status_code=400, detail=f"agent_slug is required for {task_type}")
-
-        schedules = data.get("schedules") or []
-        if not isinstance(schedules, list):
-            raise HTTPException(status_code=400, detail="schedules must be a list")
-        for i, s in enumerate(schedules):
-            err = scheduling.validate_schedule(s)
-            if err:
-                raise HTTPException(status_code=400, detail=f"schedules[{i}]: {err}")
-
-        task = store.create(
-            name=name, type=task_type, cli_type=cli_type,
-            prompt=data.get("prompt") or "", command=command,
-            notify_exit_codes=data.get("notify_exit_codes"),
-            schedules=schedules, enabled=bool(data.get("enabled", True)),
-            agent_slug=agent_slug, reuse_session=bool(data.get("reuse_session", False)),
-        )
-        return task
+        # Shared with the MCP surface (mcp/http_handler.py) so the two front
+        # doors can't disagree about what a valid task is — see validation.py.
+        kwargs, err = validation.normalize_create(data)
+        if err:
+            raise HTTPException(status_code=400, detail=err)
+        return store.create(**kwargs)
 
     @api.get("/tasks/{task_id}")
     async def get_task(task_id: str):
@@ -90,16 +69,10 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager) -> FastAPI:
         existing = store.get(task_id)
         if not existing:
             raise HTTPException(status_code=404, detail="Not found")
-        if "schedules" in data:
-            scheds = data["schedules"]
-            if not isinstance(scheds, list):
-                raise HTTPException(status_code=400, detail="schedules must be a list")
-            for i, s in enumerate(scheds):
-                err = scheduling.validate_schedule(s)
-                if err:
-                    raise HTTPException(status_code=400, detail=f"schedules[{i}]: {err}")
-        updated = store.update(task_id, data)
-        return updated
+        err = validation.validate_patch(existing, data)
+        if err:
+            raise HTTPException(status_code=400, detail=err)
+        return store.update(task_id, data)
 
     @api.delete("/tasks/{task_id}")
     async def delete_task(task_id: str):
@@ -157,5 +130,30 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager) -> FastAPI:
     @api.get("/panel")
     async def ui():
         return HTMLResponse(content=build_view_html())
+
+    # ------------------------------------------------------------------
+    # MCP — Streamable HTTP, auto-discovered by aw-mcp-gateway's app-scan
+    # (see mcp/self_register.py + mcp/http_handler.py). Behind the same
+    # IdentityGuard as every other route here; the gateway authenticates with
+    # the X-Api-Key that self_register writes into the entry.
+    # ------------------------------------------------------------------
+
+    @api.post("/mcp")
+    async def mcp_post(data: dict | list = Body(...)):
+        from .mcp.http_handler import handle_request as mcp_handle_request
+
+        messages = data if isinstance(data, list) else [data]
+        responses = []
+        for m in messages:
+            r = await mcp_handle_request(m, ctx=ctx, store=store, manager=manager)
+            if r is not None:
+                responses.append(r)
+        if not responses:
+            return Response(status_code=202)
+        return JSONResponse(responses if isinstance(data, list) else responses[0])
+
+    @api.get("/mcp")
+    async def mcp_get():
+        return Response(status_code=405)
 
     return api

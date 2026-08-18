@@ -18,10 +18,12 @@ Ports the monolith's ``/api/tasks/*`` + the cron-tick loop
 from __future__ import annotations
 
 import logging
+import os
 import time
 
 from . import routes as routes_mod
 from .manager import TaskManager
+from .mcp import self_register as mcp_self_register
 from .store import TaskStore
 
 log = logging.getLogger("aw_apps.tasks")
@@ -46,6 +48,13 @@ class TasksAppPlugin:
         self.manager = TaskManager(ctx, self.store)
 
         ctx.routes.register(routes_mod.build_routes(ctx, self.store, self.manager))
+
+        # Make the MCP endpoint discoverable by aw-mcp-gateway's app-scan.
+        # contributes.mcp in the manifest only *declares* the surface — this
+        # is what actually serves it. See mcp/self_register.py.
+        mcp_self_register.register_self(
+            ctx.package_dir, int(os.environ.get("AW_PORT", "9030")),
+        )
 
         if ctx.has("watchdog:tasks"):
             ctx.watchdog.register(

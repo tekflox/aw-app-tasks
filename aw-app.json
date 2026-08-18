@@ -53,6 +53,19 @@
         "core.window.body:tasks.main"
       ]
     },
+    "mcp": {
+      "reload_on_save": true,
+      "provides": [
+        "list_tasks",
+        "get_task",
+        "create_task",
+        "update_task",
+        "delete_task",
+        "run_task",
+        "open_task",
+        "list_clis"
+      ]
+    },
     "skills": [
       {
         "id": "aw-tasks",
