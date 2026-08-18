@@ -123,9 +123,13 @@ TOOLS_SCHEMA: list[dict] = [
         "name": "update_task",
         "description": (
             "Patch a task — send only the fields you want to change. A patch "
-            "that touches type/agent_slug/command is re-validated against the "
-            "merged result, so an edit cannot leave a task that dispatches "
-            "nowhere."
+            "that touches type/agent_slug/command, or that arms the task "
+            "(enabled/schedules, left enabled), is re-validated against the "
+            "merged result — so an edit cannot leave a task that dispatches "
+            "nowhere, nor switch on one that already does. Disabling, "
+            "renaming, or editing a broken task while it stays off is still "
+            "allowed; pass agent_slug in the same call to repair and enable "
+            "it at once."
         ),
         "inputSchema": {
             "type": "object",
