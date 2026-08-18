@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "id": "tasks",
   "name": "Scheduled Tasks",
-  "version": "0.16.3",
+  "version": "0.17.0",
   "description": "Scheduled prompts/commands that fire into a reusable CLI session or run a cheap shell check and notify on a notable exit code. Migrated from the aw monolith (src/mcp/tasks.py + tools/agentic_output.py, src/api/task_manager.py + task_scheduler.py + routes/tasks.py, TasksTab.jsx).",
   "tier": "inprocess",
   "requires_ui_refresh": true,
