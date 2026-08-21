@@ -235,9 +235,29 @@ class TaskManager:
 
         notify = agentic_output.should_notify(exit_code, notify_codes)
         run["notified"] = notify
+        last_notified_exit_code = task.get("last_notified_exit_code")
         if not notify:
+            # Recovered (or never notable) — re-arm so the next time it goes
+            # notable is treated as a fresh occurrence, not a continuation.
+            if last_notified_exit_code is not None:
+                self.store.set_last_notified_exit_code(task["id"], None)
             run["status"] = "ok"
             run["output"] = f"exit={exit_code} — no notable difference, agent not invoked"
+            return
+
+        if last_notified_exit_code == exit_code:
+            # Same notable exit code as the last run that already paid for an
+            # agent invocation — the underlying condition hasn't changed, it's
+            # just still broken. Notifying again on every tick while it stays
+            # stuck is what turned one real failure into 58 paid runs over
+            # 27.5h (2026-08-18/20, ~$20). Stay quiet until it changes.
+            run["notified"] = False
+            run["status"] = "ok"
+            run["output"] = (
+                f"exit={exit_code} — still notable but unchanged since the last "
+                "run that notified the agent; agent not invoked (debounced "
+                "until the exit code changes)"
+            )
             return
 
         cfg = self._ctx.config or {}
@@ -270,6 +290,10 @@ class TaskManager:
             run["status"] = "error"
             run["error"] = str(e)
             return
+
+        # The agent was actually invoked (and paid for) for this exit code —
+        # debounce it until the condition changes.
+        self.store.set_last_notified_exit_code(task["id"], exit_code)
 
         run["session_id"] = result.get("run_id")
         run["output"] = result.get("text")

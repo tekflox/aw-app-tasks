@@ -53,7 +53,8 @@ _TASKS_DDL = """
     last_run_status TEXT,
     agent_slug TEXT,
     reuse_session BOOLEAN NOT NULL DEFAULT false,
-    ap_session_id TEXT
+    ap_session_id TEXT,
+    last_notified_exit_code INTEGER
 """
 
 # Columns added after the table's first release — CREATE TABLE IF NOT
@@ -65,6 +66,7 @@ _TASKS_MIGRATIONS = (
     "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS agent_slug TEXT",
     "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS reuse_session BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS ap_session_id TEXT",
+    "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS last_notified_exit_code INTEGER",
 )
 
 _RUNS_DDL = """
@@ -195,6 +197,17 @@ class TaskStore:
         self._ctx.db.execute(
             _TASKS_TABLE, "UPDATE {table} SET ap_session_id = :sid WHERE id = :id",
             {"sid": ap_session_id, "id": task_id},
+        )
+
+    def set_last_notified_exit_code(self, task_id: str, exit_code: int | None) -> None:
+        """Debounce state for ``agentic_output`` tasks — the exit code the
+        agent was last actually invoked for, so a persistently-failing check
+        notifies once per occurrence instead of on every cron tick. See
+        ``manager.py``'s ``_run_agentic_output``."""
+        self._ctx.db.execute(
+            _TASKS_TABLE,
+            "UPDATE {table} SET last_notified_exit_code = :code WHERE id = :id",
+            {"code": exit_code, "id": task_id},
         )
 
     # ------------------------------------------------------------------
@@ -335,6 +348,7 @@ class TaskStore:
             "last_run_status": m["last_run_status"],
             "agent_slug": m["agent_slug"], "reuse_session": bool(m["reuse_session"]),
             "ap_session_id": m["ap_session_id"],
+            "last_notified_exit_code": m["last_notified_exit_code"],
         }
         if with_runs:
             d["runs"] = self.runs_for(m["id"])
