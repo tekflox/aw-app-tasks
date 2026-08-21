@@ -19,7 +19,7 @@ ported:
                         ``config.agents_platform_base``/``agents_platform_token``
                         (same base-URL + bearer-identity-JWT pattern
                         ``aw-app-agents-platform-runners``'s ``mcp_server.py``
-                        already uses to reach ``agents-platform_multitenant``
+                        already uses to reach ``agents-platform-multitenant``
                         from inside this workspace container — the legacy
                         monolith's ``localhost:10005`` in-process reach is
                         not available here). When ``reuse_session`` is set,

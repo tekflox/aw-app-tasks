@@ -89,16 +89,16 @@
       "agents_platform_base": {
         "type": "string",
         "default": "http://172.18.0.1:10014",
-        "description": "Base URL of the agents-platform_multitenant instance used by 'agent_prompt'-type tasks. Same value as aw-app-agents-platform-runners's own agents_platform_base config \u2014 172.18.0.1 is the agentic-workspace_default bridge gateway (the real host), the only address reachable from this workspace's network namespace; override if your workspace's subnet differs. Leave unset to disable 'agent_prompt'-type task execution."
+        "description": "Base URL of the agents-platform-multitenant instance used by 'agent_prompt'-type tasks. Same value as aw-app-agents-platform-runners's own agents_platform_base config \u2014 172.18.0.1 is the agentic-workspace_default bridge gateway (the real host), the only address reachable from this workspace's network namespace; override if your workspace's subnet differs. Leave unset to disable 'agent_prompt'-type task execution."
       },
       "agents_platform_token": {
         "type": "string",
-        "description": "aw-backend identity JWT sent as Authorization: Bearer on every call to agents_platform_base \u2014 required, agents-platform_multitenant's require_identity() rejects unauthenticated requests with 401. Mint one inside the aw-backend container: python -c \"from src.api.identity_auth import create_identity_jwt; print(create_identity_jwt(<user_id>, [{'workspace': 'aw', 'role': 'owner'}], expiry_seconds=<seconds>))\""
+        "description": "aw-backend identity JWT sent as Authorization: Bearer on every call to agents_platform_base \u2014 required, agents-platform-multitenant's require_identity() rejects unauthenticated requests with 401. Mint one inside the aw-backend container: python -c \"from src.api.identity_auth import create_identity_jwt; print(create_identity_jwt(<user_id>, [{'workspace': 'aw', 'role': 'owner'}], expiry_seconds=<seconds>))\""
       },
       "agents_platform_target": {
         "type": "string",
         "default": "adhoc",
-        "description": "target_slug sent with every 'agent_prompt' run \u2014 which Agents Platform Target (repo/workspace context) the agent runs against. 'adhoc' is agents-platform_multitenant's no-repo default target."
+        "description": "target_slug sent with every 'agent_prompt' run \u2014 which Agents Platform Target (repo/workspace context) the agent runs against. 'adhoc' is agents-platform-multitenant's no-repo default target."
       }
     },
     "required": []

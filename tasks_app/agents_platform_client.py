@@ -1,4 +1,4 @@
-"""Client for calling an Agents Platform (``agents-platform_multitenant``)
+"""Client for calling an Agents Platform (``agents-platform-multitenant``)
 agent with a prompt — backs the ``agent_prompt`` task type.
 
 Ported from the monolith's ``task_manager.py`` (``TaskManager._ap_agent_run``,
@@ -7,10 +7,10 @@ same process' network namespace — not reachable from inside a BYOD workspace
 container). This app instead follows the pattern already established by
 ``aw-app-agents-platform-runners`` (``mcp_server.py``'s ``BASE``/
 ``AUTH_HEADERS``): a configured base URL + a bearer identity JWT, since
-``agents-platform_multitenant``'s ``require_identity()`` rejects
+``agents-platform-multitenant``'s ``require_identity()`` rejects
 unauthenticated requests.
 
-Endpoints used (see ``agents-platform_multitenant/backend/app/api/agents.py``
+Endpoints used (see ``agents-platform-multitenant/backend/app/api/agents.py``
 and ``api/runs.py``):
 
 * ``POST {base}/api/agents/{slug}/run`` — start a run, body
