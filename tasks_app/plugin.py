@@ -122,6 +122,38 @@ class TasksAppPlugin:
         log.info("aw-app-tasks: seeded task %r contributed by %s", name, app_id)
         return True
 
+    def read_contributed_task(self, name: str) -> dict | None:
+        """One seeded task's current values, for the workspace's reconcile pass.
+
+        Half of the pair that lets an app correct a prompt or command it
+        shipped wrong. The workspace decides *what* may change (only fields
+        still holding the value it seeded, never ``enabled``/``schedules``);
+        this just reports what is live. See aw-workspace
+        ``src/apps/seeded_state.py``.
+        """
+        for task in self.store.list():
+            if task.get("name") == name:
+                return dict(task)
+        return None
+
+    def update_contributed_task(self, name: str, changes: dict) -> bool:
+        """Apply the workspace's vetted field changes to a seeded task.
+
+        Deliberately dumb: no merge logic and no ownership check here, because
+        both already happened on the workspace side and duplicating them is
+        how the two copies drift apart. Refuses an unknown name rather than
+        creating one — this path exists to correct, never to seed.
+        """
+        if not changes:
+            return False
+        target = next((t for t in self.store.list() if t.get("name") == name), None)
+        if target is None:
+            log.warning("aw-app-tasks: cannot reconcile unknown task %r", name)
+            return False
+        self.store.update(target["id"], dict(changes))
+        log.info("aw-app-tasks: reconciled task %r (%s)", name, ", ".join(sorted(changes)))
+        return True
+
     async def deactivate(self) -> None:
         log.info("aw-app-tasks deactivated")
 
