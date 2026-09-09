@@ -15,6 +15,15 @@ Decision 2/6) but otherwise match 1:1:
     POST   /api/tasks/preview-sched.  POST   /preview-schedules
                                        GET    /panel (vanilla-JS view, see view.py)
                                        POST   /mcp   (MCP over Streamable HTTP)
+                                       WS     /ws/updates (live run updates)
+
+``/ws/updates`` is this app's own WebSocket, declared here with a relative
+path exactly like every HTTP route above — the runtime mounts the whole
+sub-app at ``/api/apps/tasks``, so it is reachable at
+``/api/apps/tasks/ws/updates``. Nothing is needed in the manifest:
+``routes:register`` already covers WebSockets (aw-workspace
+``docs/standards/app-backend-websocket-messaging.md`` §8.6). See
+``updates.py`` for the envelope and the cross-worker relay behind it.
 
 The MCP surface at ``/mcp`` re-exposes the monolith's ``src/mcp/tasks.py``
 tools against the same store/manager these routes use — see
@@ -22,17 +31,22 @@ tools against the same store/manager these routes use — see
 """
 from __future__ import annotations
 
-from fastapi import Body, FastAPI, HTTPException
+import json
+
+from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from . import agents_platform_client, scheduling, validation
 from .manager import TaskManager
 from .store import TaskStore
+from .updates import TaskUpdates, init_frame
 from .view import build_view_html
 
 
-def build_routes(ctx, store: TaskStore, manager: TaskManager) -> FastAPI:
+def build_routes(ctx, store: TaskStore, manager: TaskManager,
+                 updates: TaskUpdates | None = None) -> FastAPI:
     api = FastAPI(title="tasks")
+    updates = updates if updates is not None else TaskUpdates()
 
     @api.get("/agents")
     async def list_agents():
@@ -130,6 +144,34 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager) -> FastAPI:
     @api.get("/panel")
     async def ui():
         return HTMLResponse(content=build_view_html())
+
+    # ------------------------------------------------------------------
+    # WebSocket — live run updates (aw-ws/1). See updates.py.
+    #
+    # No auth code here on purpose: the runtime wraps every app mount in
+    # IdentityGuard, which gates the `websocket` scope exactly as it gates
+    # `http` and stashes the caller's claims at scope["aw_identity"] (standard
+    # §2.3/§6.2). Re-verifying would be wrong in standalone mode and
+    # duplicated everywhere else. This handler doesn't need to know who is
+    # calling, so it never reads them.
+    # ------------------------------------------------------------------
+
+    @api.websocket("/ws/updates")
+    async def task_updates_stream(websocket: WebSocket):
+        await websocket.accept()
+        await websocket.send_text(json.dumps(init_frame()))
+        updates.add_listener(websocket)
+        try:
+            while True:
+                # Nothing is expected inbound. Reading anyway is what makes
+                # a client disconnect surface as WebSocketDisconnect rather
+                # than sitting here forever; an unknown frame is ignored, not
+                # closed over (standard §6.4).
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            updates.remove_listener(websocket)
 
     # ------------------------------------------------------------------
     # MCP — Streamable HTTP, auto-discovered by aw-mcp-gateway's app-scan

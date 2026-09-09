@@ -36,6 +36,7 @@
 //    directly with the literal path — same mechanism, just not app-scoped.
 
 import { createClient } from './client.js';
+import { createSharedSocket } from './ws.js';
 
 export function register(host) {
   const client = createClient({
@@ -44,6 +45,67 @@ export function register(host) {
   });
 
   const { useState, useRef, useCallback, useEffect } = host.React;
+
+  // ------------------------------------------------------------------
+  // Live run updates — this app's own /api/apps/tasks/ws/updates socket
+  // (tasks_app/routes.py + updates.py), replacing the 4s poll v0.23.0
+  // shipped as a stopgap.
+  //
+  // ONE connection for both slots. Neither is persistently mounted — the nav
+  // row only exists while the Workspace popover is open, the window body only
+  // while the window is open — so ws.js ref-counts: the socket opens on the
+  // first retain() and closes on the last release.
+  //
+  // The frame is a nudge, not the data (an ephemeral /ws/status-kind socket,
+  // aw-ws/1 §1.1.1): it says WHICH task changed, and both slots then refetch
+  // over REST, which stays the source of truth. It does that by dispatching
+  // the SAME `aw-task-update` CustomEvent core's /ws/status path already
+  // dispatches (aw-workspace-ui useComponentStatus.js) — so the listeners
+  // both slots have carried since the port, dead until now, finally fire.
+  // Dispatched here, once per frame, rather than per subscriber.
+  // ------------------------------------------------------------------
+
+  // Tiny pub/sub so a slot can SHOW "live updates stopped — session expired"
+  // rather than silently going stale, which is the whole point of §7.1's
+  // close-code rule. Only fatal states get here; a transient close is what
+  // ws.js's backoff is for.
+  let lastFatal = null;
+  const fatalListeners = new Set();
+
+  const taskUpdates = createSharedSocket({
+    url: () => host.app.wsUrl('/ws/updates'),
+    onFrame: (msg) => {
+      if (msg.type !== 'tasks_update') return;
+      window.dispatchEvent(new CustomEvent('aw-task-update', { detail: msg.data }));
+    },
+    onStatus: ({ state, message }) => {
+      if (state === 'fatal') lastFatal = message;
+      else if (state === 'open') lastFatal = null;
+      else return;
+      for (const fn of fatalListeners) fn(lastFatal);
+    },
+  });
+
+  function useTaskUpdates(reload) {
+    // Hold the shared socket open while this slot is mounted...
+    useEffect(() => taskUpdates.retain(), []);
+    // ...and refresh on the event its frames dispatch.
+    useEffect(() => {
+      const handler = () => reload();
+      window.addEventListener('aw-task-update', handler);
+      return () => window.removeEventListener('aw-task-update', handler);
+    }, [reload]);
+  }
+
+  function useTaskUpdatesFatal() {
+    const [fatal, setFatal] = useState(lastFatal);
+    useEffect(() => {
+      fatalListeners.add(setFatal);
+      setFatal(lastFatal);
+      return () => fatalListeners.delete(setFatal);
+    }, []);
+    return fatal;
+  }
 
   function TasksIcon() {
     return (
@@ -86,12 +148,8 @@ export function register(host) {
       }
     }, []);
 
-    useEffect(() => {
-      refreshTasks();
-      const handler = () => refreshTasks();
-      window.addEventListener('aw-task-update', handler);
-      return () => window.removeEventListener('aw-task-update', handler);
-    }, [refreshTasks]);
+    useEffect(() => { refreshTasks(); }, [refreshTasks]);
+    useTaskUpdates(refreshTasks);
 
     useEffect(() => () => clearTimeout(closeTimer.current), []);
 
@@ -1007,23 +1065,11 @@ export function register(host) {
       reload();
     }, [reload]);
 
-    // No core capability broadcasts task_update onto this window yet (see
-    // manager.py header) — poll while the window is mounted so a running
-    // pill actually clears when its run finishes, instead of staying
-    // "running" until the window is closed and reopened. Same
-    // refresh-then-setInterval-then-clearInterval shape as WhatsAppTab's
-    // useWhatsAppStatus. Cheap: this hits the same /tasks list the mount
-    // fetch already does, and the window is closed most of the time.
-    useEffect(() => {
-      const id = setInterval(reload, 4000);
-      return () => clearInterval(id);
-    }, [reload]);
-
-    useEffect(() => {
-      const handler = () => reload();
-      window.addEventListener('aw-task-update', handler);
-      return () => window.removeEventListener('aw-task-update', handler);
-    }, [reload]);
+    // Pushed, not polled: manager.py broadcasts every run start/finish over
+    // this app's own socket and useTaskUpdates turns that into a reload.
+    // Replaces the 4s setInterval v0.23.0 shipped while no push path existed.
+    useTaskUpdates(reload);
+    const updatesFatal = useTaskUpdatesFatal();
 
     const [presentationsByTask, setPresentationsByTask] = useState({});
     const reloadPresentations = useCallback(async () => {
@@ -1172,6 +1218,15 @@ export function register(host) {
         {error && (
           <div className="mb-3 px-2 py-1.5 text-[11px] rounded bg-[var(--color-danger)]/10 text-[var(--color-danger)] border border-[var(--color-danger)]/30">
             {error}
+          </div>
+        )}
+
+        {/* A 4401/4403/4426 close means this list has stopped updating itself
+            and will not resume — say so, rather than quietly going stale
+            (aw-ws/1 §7.1). Transient closes never reach here; ws.js reconnects. */}
+        {updatesFatal && (
+          <div className="mb-3 px-2 py-1.5 text-[11px] rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/30">
+            {updatesFatal} Reload the page to resume.
           </div>
         )}
 

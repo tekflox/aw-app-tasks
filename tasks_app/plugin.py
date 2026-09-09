@@ -25,6 +25,7 @@ from . import routes as routes_mod
 from .manager import TaskManager
 from .mcp import self_register as mcp_self_register
 from .store import TaskStore
+from .updates import TaskUpdates
 
 log = logging.getLogger("aw_apps.tasks")
 
@@ -45,9 +46,19 @@ class TasksAppPlugin:
     async def activate(self, ctx) -> None:
         self.ctx = ctx
         self.store = TaskStore(ctx)
-        self.manager = TaskManager(ctx, self.store)
+        self.updates = TaskUpdates()
+        self.manager = TaskManager(ctx, self.store, self.updates)
 
-        ctx.routes.register(routes_mod.build_routes(ctx, self.store, self.manager))
+        # ATTACH half (aw-workspace src/apps/lifecycle.py) — activate() runs
+        # in EVERY worker, which is exactly once per process, which is what a
+        # PSUBSCRIBE relay wants. Awaited rather than fired off: the subscribe
+        # has to be confirmed before this worker serves requests, or a run
+        # that finishes in the gap is delivered nowhere (redis_coord's relay
+        # has no replay). Never raises — see start_relay.
+        await self.updates.start_relay()
+
+        ctx.routes.register(
+            routes_mod.build_routes(ctx, self.store, self.manager, self.updates))
 
         # Make the MCP endpoint discoverable by aw-mcp-gateway's app-scan.
         # contributes.mcp in the manifest only *declares* the surface — this
@@ -155,6 +166,9 @@ class TasksAppPlugin:
         return True
 
     async def deactivate(self) -> None:
+        updates = getattr(self, "updates", None)
+        if updates is not None:
+            await updates.aclose()
         log.info("aw-app-tasks deactivated")
 
     async def _tick(self) -> None:

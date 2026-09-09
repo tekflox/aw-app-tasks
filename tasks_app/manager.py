@@ -44,6 +44,7 @@ import time
 
 from . import agentic_output, agents_platform_client, terminal_client
 from .store import TaskStore
+from .updates import TaskUpdates
 
 logger = logging.getLogger("tasks_app.manager")
 
@@ -53,9 +54,13 @@ def _now() -> float:
 
 
 class TaskManager:
-    def __init__(self, ctx, store: TaskStore):
+    def __init__(self, ctx, store: TaskStore, updates: TaskUpdates | None = None):
         self._ctx = ctx
         self.store = store
+        # Pushes run transitions to open Tasks windows on every worker — see
+        # updates.py. Optional so a test can build a manager without one; the
+        # plugin always supplies the real hub.
+        self._updates = updates
         # Guards against a scheduler tick re-firing a task that is still
         # mid-run from a previous tick (mirrors the monolith's
         # TaskScheduler._firing set).
@@ -65,6 +70,27 @@ class TaskManager:
 
     def is_firing(self, task_id: str) -> bool:
         return task_id in self._firing
+
+    async def _broadcast_run(self, task_id: str, action: str, run: dict) -> None:
+        """Tell every open Tasks window that this task's run just changed
+        state. ``action`` is ``"start"`` or ``"finish"``.
+
+        Swallows everything. ``publish`` already does, but this is called from
+        ``_finish_task``, which runs detached and folds any exception into a
+        "recording the run outcome failed" log line — the one place in this
+        app where a broken broadcast would look like a successful run *and*
+        skip the notification that follows it.
+        """
+        if self._updates is None:
+            return
+        try:
+            await self._updates.publish(
+                task_id=task_id, action=action, status=run.get("status"),
+                run_id=run.get("id"), trigger=run.get("trigger"),
+            )
+        except Exception:  # noqa: BLE001 — must never fail a real run
+            logger.warning("Task %s: could not broadcast the %s update",
+                           task_id, action, exc_info=True)
 
     def _new_run(self, trigger: str) -> dict:
         return {
@@ -101,6 +127,10 @@ class TaskManager:
         run = self._new_run(trigger)
         self._firing.add(task_id)
         self.store.insert_run(task_id, run)
+        # Not needed for the browser that clicked Run — it reloads on its own
+        # — but a SECOND open window or the nav flyout has no other way to
+        # learn the run started.
+        await self._broadcast_run(task_id, "start", run)
         # Hold a strong reference — asyncio only keeps a weak one, so a
         # fire-and-forget task can otherwise be garbage collected mid-run.
         bg = asyncio.create_task(self._finish_task(task, run))
@@ -121,6 +151,7 @@ class TaskManager:
             run = self._new_run(trigger)
             await self._dispatch(task, run)
             self.store.record_run(task_id, run)
+            await self._broadcast_run(task_id, "finish", run)
             await self._maybe_notify(task, run)
             return run
         finally:
@@ -133,6 +164,10 @@ class TaskManager:
         try:
             await self._dispatch(task, run)
             self.store.finish_run(task_id, run)
+            # THE fix for "status stuck on running": until now this path
+            # settled the row in Postgres and sent a toast, and the window
+            # itself was never told (card 3d65bf3b-9510-8171-b5ce-eb05624b7bb7).
+            await self._broadcast_run(task_id, "finish", run)
             await self._maybe_notify(task, run)
         except Exception:  # noqa: BLE001 - detached: nothing would surface it
             logger.exception("Task %s: recording the run outcome failed", task_id)
