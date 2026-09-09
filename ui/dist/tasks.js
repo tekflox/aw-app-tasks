@@ -5,8 +5,8 @@ function ce({ apiUrl: e, fetchImpl: O = fetch }) {
     return (await _.json()).tasks || [];
   }
   async function R(_) {
-    const k = await O(e(`/tasks/${encodeURIComponent(_)}/run`), { method: "POST" }), A = await k.json().catch(() => ({}));
-    if (!k.ok) throw new Error(A.detail || A.error || `POST /tasks/${_}/run -> ${k.status}`);
+    const N = await O(e(`/tasks/${encodeURIComponent(_)}/run`), { method: "POST" }), A = await N.json().catch(() => ({}));
+    if (!N.ok) throw new Error(A.detail || A.error || `POST /tasks/${_}/run -> ${N.status}`);
     return A;
   }
   return { listTasks: g, runTask: R };
@@ -15,7 +15,7 @@ function ie(e) {
   const O = ce({
     apiUrl: e.app.apiUrl,
     fetchImpl: e.sdk.api.fetch
-  }), { useState: g, useRef: R, useCallback: _, useEffect: k } = e.React;
+  }), { useState: g, useRef: R, useCallback: _, useEffect: N } = e.React;
   function A() {
     return /* @__PURE__ */ e.h("svg", { className: "w-3.5 h-3.5 shrink-0 text-[var(--color-text-muted)]", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2" }, /* @__PURE__ */ e.h("circle", { cx: "12", cy: "12", r: "10" }), /* @__PURE__ */ e.h("polyline", { points: "12 6 12 12 16 14" }));
   }
@@ -30,31 +30,31 @@ function ie(e) {
     return l.kind === "cron" ? l.expr || "cron" : l.kind || "scheduled";
   }
   function Y() {
-    const [t, a] = g(!1), [l, s] = g([]), [m, x] = g(null), [C, c] = g(null), o = R(null), d = _(async () => {
+    const [t, a] = g(!1), [l, s] = g([]), [m, x] = g(null), [C, c] = g(null), n = R(null), d = _(async () => {
       try {
         s(await O.listTasks()), x(null);
-      } catch (n) {
-        x(String(n.message || n));
+      } catch (o) {
+        x(String(o.message || o));
       }
     }, []);
-    k(() => {
+    N(() => {
       d();
-      const n = () => d();
-      return window.addEventListener("aw-task-update", n), () => window.removeEventListener("aw-task-update", n);
-    }, [d]), k(() => () => clearTimeout(o.current), []);
+      const o = () => d();
+      return window.addEventListener("aw-task-update", o), () => window.removeEventListener("aw-task-update", o);
+    }, [d]), N(() => () => clearTimeout(n.current), []);
     const y = _(() => {
-      clearTimeout(o.current), a(!0), d();
+      clearTimeout(n.current), a(!0), d();
     }, [d]), p = _(() => {
-      o.current = setTimeout(() => a(!1), 150);
+      n.current = setTimeout(() => a(!1), 150);
     }, []), w = _(() => {
-      var n;
-      a(!1), (n = window.__awOpenAppWindow) == null || n.call(window, "tasks.main");
-    }, []), f = _(async (n) => {
-      c(n.id), x(null);
+      var o;
+      a(!1), (o = window.__awOpenAppWindow) == null || o.call(window, "tasks.main");
+    }, []), f = _(async (o) => {
+      c(o.id), x(null);
       try {
-        await O.runTask(n.id), await d();
+        await O.runTask(o.id), await d();
       } catch (S) {
-        x(`${n.name}: ${S.message || S}`);
+        x(`${o.name}: ${S.message || S}`);
       } finally {
         c(null);
       }
@@ -85,22 +85,22 @@ function ie(e) {
         "Open all →"
       )),
       m && /* @__PURE__ */ e.h("div", { className: "mx-1 mb-2 px-2 py-1 text-[11px] rounded bg-[var(--color-danger)]/10 text-[var(--color-danger)] border border-[var(--color-danger)]/30" }, m),
-      l.length === 0 ? /* @__PURE__ */ e.h("div", { className: "px-3 py-6 text-center text-xs text-[var(--color-text-muted)] italic" }, 'No tasks yet. Click "Open all →" to create one.') : /* @__PURE__ */ e.h("div", { className: "overflow-y-auto", style: { maxHeight: "70vh" } }, l.map((n) => {
-        const S = C === n.id, T = n.last_run_status === "ok" ? "bg-green-400" : n.last_run_status === "error" ? "bg-red-400" : n.last_run_status === "running" ? "bg-blue-400" : "bg-white/20";
+      l.length === 0 ? /* @__PURE__ */ e.h("div", { className: "px-3 py-6 text-center text-xs text-[var(--color-text-muted)] italic" }, 'No tasks yet. Click "Open all →" to create one.') : /* @__PURE__ */ e.h("div", { className: "overflow-y-auto", style: { maxHeight: "70vh" } }, l.map((o) => {
+        const S = C === o.id, T = o.last_run_status === "ok" ? "bg-green-400" : o.last_run_status === "error" ? "bg-red-400" : o.last_run_status === "running" ? "bg-blue-400" : "bg-white/20";
         return /* @__PURE__ */ e.h(
           "div",
           {
-            key: n.id,
+            key: o.id,
             className: "group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/[0.05]",
-            title: n.name
+            title: o.name
           },
           /* @__PURE__ */ e.h("span", { className: `w-1.5 h-1.5 rounded-full shrink-0 ${T}` }),
-          /* @__PURE__ */ e.h("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ e.h("div", { className: "flex items-center gap-1.5" }, /* @__PURE__ */ e.h("span", { className: "text-[13px] text-[var(--color-text-primary)] truncate" }, n.name), !n.enabled && /* @__PURE__ */ e.h("span", { className: "px-1 py-0.5 rounded text-[9px] bg-white/5 text-[var(--color-text-muted)] shrink-0" }, "off")), /* @__PURE__ */ e.h("div", { className: "text-[10px] text-[var(--color-text-muted)] truncate font-mono" }, n.type === "agent_prompt" || n.type === "agentic_output" ? n.type : n.cli_type, " · ", J(n))),
+          /* @__PURE__ */ e.h("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ e.h("div", { className: "flex items-center gap-1.5" }, /* @__PURE__ */ e.h("span", { className: "text-[13px] text-[var(--color-text-primary)] truncate" }, o.name), !o.enabled && /* @__PURE__ */ e.h("span", { className: "px-1 py-0.5 rounded text-[9px] bg-white/5 text-[var(--color-text-muted)] shrink-0" }, "off")), /* @__PURE__ */ e.h("div", { className: "text-[10px] text-[var(--color-text-muted)] truncate font-mono" }, o.type === "agent_prompt" || o.type === "agentic_output" ? o.type : o.cli_type, " · ", J(o))),
           /* @__PURE__ */ e.h(
             "button",
             {
               onClick: (M) => {
-                M.stopPropagation(), f(n);
+                M.stopPropagation(), f(o);
               },
               disabled: S,
               className: "p-1 rounded hover:bg-white/10 text-green-400 disabled:opacity-50 shrink-0",
@@ -112,7 +112,7 @@ function ie(e) {
       }))
     ));
   }
-  const W = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], I = { display: "grid", gridTemplateColumns: "minmax(160px,1fr) 90px minmax(160px,1fr) 60px 120px 70px 140px" }, K = { display: "grid", gridTemplateColumns: "160px 70px 60px 1fr" };
+  const j = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], W = { display: "grid", gridTemplateColumns: "minmax(160px,1fr) 90px minmax(160px,1fr) 60px 120px 70px 140px" }, K = { display: "grid", gridTemplateColumns: "160px 70px 60px 1fr" };
   function L(t) {
     return t ? new Date(t * 1e3).toLocaleString() : "—";
   }
@@ -137,7 +137,7 @@ function ie(e) {
       case "daily":
         return `Daily ${t.time}`;
       case "weekly":
-        return `Weekly ${(t.days || []).map((l) => W[l] || l).join("/")} ${t.time}`;
+        return `Weekly ${(t.days || []).map((l) => j[l] || l).join("/")} ${t.time}`;
       case "monthly":
         return `Monthly day ${t.day_of_month} at ${t.time}`;
       case "cron":
@@ -172,12 +172,12 @@ function ie(e) {
     return `bg-[var(--color-bg-primary)] border rounded px-2 py-1.5 text-xs text-[var(--color-text-primary)] ${t ? "border-[var(--color-danger)]" : "border-[var(--color-border)]"}`;
   }
   function Q({ value: t, error: a, onChange: l, onRemove: s, nextFireAt: m }) {
-    const x = t.kind, C = (o) => l(U(o)), c = (o) => l({ ...t, ...o });
+    const x = t.kind, C = (n) => l(U(n)), c = (n) => l({ ...t, ...n });
     return /* @__PURE__ */ e.h("div", { className: "border border-[var(--color-border)] rounded p-2 bg-[var(--color-bg-primary)]/40" }, /* @__PURE__ */ e.h("div", { className: "flex items-center gap-2 mb-2" }, /* @__PURE__ */ e.h(
       "select",
       {
         value: x,
-        onChange: (o) => C(o.target.value),
+        onChange: (n) => C(n.target.value),
         className: E(!1) + " shrink-0"
       },
       /* @__PURE__ */ e.h("option", { value: "once" }, "Once"),
@@ -198,7 +198,7 @@ function ie(e) {
       {
         type: "datetime-local",
         value: t.at || "",
-        onChange: (o) => c({ at: o.target.value }),
+        onChange: (n) => c({ at: n.target.value }),
         className: E(!!a) + " w-full"
       }
     ), x === "daily" && /* @__PURE__ */ e.h("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ e.h("span", { className: "text-[11px] text-[var(--color-text-muted)] w-12" }, "at"), /* @__PURE__ */ e.h(
@@ -206,10 +206,10 @@ function ie(e) {
       {
         type: "time",
         value: t.time || "",
-        onChange: (o) => c({ time: o.target.value }),
+        onChange: (n) => c({ time: n.target.value }),
         className: E(!!a)
       }
-    )), x === "weekly" && /* @__PURE__ */ e.h("div", { className: "space-y-2" }, /* @__PURE__ */ e.h("div", { className: "flex items-center gap-1 flex-wrap" }, W.map((o, d) => {
+    )), x === "weekly" && /* @__PURE__ */ e.h("div", { className: "space-y-2" }, /* @__PURE__ */ e.h("div", { className: "flex items-center gap-1 flex-wrap" }, j.map((n, d) => {
       const y = (t.days || []).includes(d);
       return /* @__PURE__ */ e.h(
         "button",
@@ -222,14 +222,14 @@ function ie(e) {
           },
           className: `px-2 py-1 text-[11px] rounded border ${y ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)] border-[var(--color-accent)]/30" : "bg-[var(--color-bg-primary)] text-[var(--color-text-muted)] border-[var(--color-border)] hover:bg-white/5"}`
         },
-        o
+        n
       );
     })), /* @__PURE__ */ e.h("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ e.h("span", { className: "text-[11px] text-[var(--color-text-muted)] w-12" }, "at"), /* @__PURE__ */ e.h(
       "input",
       {
         type: "time",
         value: t.time || "",
-        onChange: (o) => c({ time: o.target.value }),
+        onChange: (n) => c({ time: n.target.value }),
         className: E(!!a)
       }
     ))), x === "monthly" && /* @__PURE__ */ e.h("div", { className: "flex items-center gap-2 flex-wrap" }, /* @__PURE__ */ e.h("span", { className: "text-[11px] text-[var(--color-text-muted)]" }, "on day"), /* @__PURE__ */ e.h(
@@ -239,7 +239,7 @@ function ie(e) {
         min: 1,
         max: 31,
         value: t.day_of_month ?? 1,
-        onChange: (o) => c({ day_of_month: Number(o.target.value) }),
+        onChange: (n) => c({ day_of_month: Number(n.target.value) }),
         className: E(!!a) + " w-16"
       }
     ), /* @__PURE__ */ e.h("span", { className: "text-[11px] text-[var(--color-text-muted)]" }, "at"), /* @__PURE__ */ e.h(
@@ -247,7 +247,7 @@ function ie(e) {
       {
         type: "time",
         value: t.time || "",
-        onChange: (o) => c({ time: o.target.value }),
+        onChange: (n) => c({ time: n.target.value }),
         className: E(!!a)
       }
     )), x === "cron" && /* @__PURE__ */ e.h("div", null, /* @__PURE__ */ e.h(
@@ -256,14 +256,14 @@ function ie(e) {
         type: "text",
         value: t.expr || "",
         placeholder: "0 9 * * *",
-        onChange: (o) => c({ expr: o.target.value }),
+        onChange: (n) => c({ expr: n.target.value }),
         className: E(!!a) + " w-full font-mono"
       }
     ), /* @__PURE__ */ e.h("div", { className: "text-[10px] text-[var(--color-text-muted)] mt-1" }, "5 fields: minute hour day-of-month month day-of-week. Examples:", /* @__PURE__ */ e.h("span", { className: "font-mono" }, " */15 * * * *"), ",", " ", /* @__PURE__ */ e.h("span", { className: "font-mono" }, "0 9 * * 1-5"), ",", " ", /* @__PURE__ */ e.h("span", { className: "font-mono" }, "@hourly"), ".")), a && /* @__PURE__ */ e.h("div", { className: "text-[10px] text-[var(--color-danger)] mt-1" }, a));
   }
   function X({ schedules: t, onChange: a }) {
     const [l, s] = g(null);
-    k(() => {
+    N(() => {
       if (!t.length) {
         s(null);
         return;
@@ -282,22 +282,22 @@ function ie(e) {
       }, 300);
       return () => clearTimeout(c);
     }, [t]);
-    const m = (c, o) => {
+    const m = (c, n) => {
       const d = t.slice();
-      d[c] = o, a(d);
-    }, x = (c) => a(t.filter((o, d) => d !== c)), C = (c) => a([...t, U(c)]);
-    return /* @__PURE__ */ e.h("div", { className: "space-y-2" }, /* @__PURE__ */ e.h("div", { className: "flex items-center justify-between" }, /* @__PURE__ */ e.h("span", { className: "text-[11px] uppercase tracking-wider text-[var(--color-text-muted)]" }, "Schedules"), /* @__PURE__ */ e.h("span", { className: "text-[10px] text-[var(--color-text-muted)]" }, l != null && l.next_fire_at ? /* @__PURE__ */ e.h(e.React.Fragment, null, "Next fires: ", /* @__PURE__ */ e.h("span", { className: "font-mono text-[var(--color-accent)]" }, L(l.next_fire_at))) : t.length === 0 ? "No schedule — runs only on manual ▶" : "No upcoming fire")), t.map((c, o) => {
+      d[c] = n, a(d);
+    }, x = (c) => a(t.filter((n, d) => d !== c)), C = (c) => a([...t, U(c)]);
+    return /* @__PURE__ */ e.h("div", { className: "space-y-2" }, /* @__PURE__ */ e.h("div", { className: "flex items-center justify-between" }, /* @__PURE__ */ e.h("span", { className: "text-[11px] uppercase tracking-wider text-[var(--color-text-muted)]" }, "Schedules"), /* @__PURE__ */ e.h("span", { className: "text-[10px] text-[var(--color-text-muted)]" }, l != null && l.next_fire_at ? /* @__PURE__ */ e.h(e.React.Fragment, null, "Next fires: ", /* @__PURE__ */ e.h("span", { className: "font-mono text-[var(--color-accent)]" }, L(l.next_fire_at))) : t.length === 0 ? "No schedule — runs only on manual ▶" : "No upcoming fire")), t.map((c, n) => {
       var y;
-      const d = (y = l == null ? void 0 : l.entries) == null ? void 0 : y.find((p) => p.index === o);
+      const d = (y = l == null ? void 0 : l.entries) == null ? void 0 : y.find((p) => p.index === n);
       return /* @__PURE__ */ e.h(
         Q,
         {
-          key: o,
+          key: n,
           value: c,
           error: d && !d.ok ? d.error : null,
           nextFireAt: d == null ? void 0 : d.next_fire_at,
-          onChange: (p) => m(o, p),
-          onRemove: () => x(o)
+          onChange: (p) => m(n, p),
+          onRemove: () => x(n)
         }
       );
     }), /* @__PURE__ */ e.h("div", { className: "flex items-center gap-1.5 flex-wrap pt-1" }, /* @__PURE__ */ e.h("span", { className: "text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mr-1" }, "Add:"), [
@@ -306,7 +306,7 @@ function ie(e) {
       ["weekly", "Weekly"],
       ["monthly", "Monthly"],
       ["cron", "Cron"]
-    ].map(([c, o]) => /* @__PURE__ */ e.h(
+    ].map(([c, n]) => /* @__PURE__ */ e.h(
       "button",
       {
         key: c,
@@ -315,10 +315,10 @@ function ie(e) {
         className: "px-2 py-1 text-[11px] rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/20"
       },
       "+ ",
-      o
+      n
     ))));
   }
-  function j({ checked: t, onChange: a, disabled: l, label: s, tone: m = "danger" }) {
+  function I({ checked: t, onChange: a, disabled: l, label: s, tone: m = "danger" }) {
     const x = m === "ok" ? "bg-green-500" : "bg-[var(--color-danger)]";
     return /* @__PURE__ */ e.h(
       "button",
@@ -340,8 +340,8 @@ function ie(e) {
     );
   }
   function Z({ task: t, onClose: a, onSaved: l }) {
-    const s = !t, [m, x] = g((t == null ? void 0 : t.name) || ""), [C, c] = g((t == null ? void 0 : t.prompt) || ""), [o, d] = g((t == null ? void 0 : t.schedules) || []), [y, p] = g((t == null ? void 0 : t.enabled) ?? !0), [w, f] = g(null), [n, S] = g(!1), [T, M] = g((t == null ? void 0 : t.type) || "terminal"), [r, u] = g((t == null ? void 0 : t.agent_slug) || ""), [b, v] = g((t == null ? void 0 : t.reuse_session) ?? !1), [h, $] = g((t == null ? void 0 : t.command) || ""), [N, ne] = g((t == null ? void 0 : t.notify_exit_codes) || ""), [z, F] = g([]);
-    k(() => {
+    const s = !t, [m, x] = g((t == null ? void 0 : t.name) || ""), [C, c] = g((t == null ? void 0 : t.prompt) || ""), [n, d] = g((t == null ? void 0 : t.schedules) || []), [y, p] = g((t == null ? void 0 : t.enabled) ?? !0), [w, f] = g(null), [o, S] = g(!1), [T, M] = g((t == null ? void 0 : t.type) || "terminal"), [r, u] = g((t == null ? void 0 : t.agent_slug) || ""), [b, v] = g((t == null ? void 0 : t.reuse_session) ?? !1), [h, $] = g((t == null ? void 0 : t.command) || ""), [k, ne] = g((t == null ? void 0 : t.notify_exit_codes) || ""), [z, F] = g([]);
+    N(() => {
       e.sdk.api.fetch(e.app.apiUrl("/agents")).then((i) => i.json()).then((i) => F(i.ap_agents || [])).catch(() => F([]));
     }, []);
     const oe = {
@@ -377,12 +377,12 @@ function ie(e) {
             type: T,
             cli_type: "terminal",
             prompt: C,
-            schedules: o,
+            schedules: n,
             enabled: y,
             agent_slug: r,
             reuse_session: b,
             command: h,
-            notify_exit_codes: N
+            notify_exit_codes: k
           })
         }), P = await H.json();
         if (!H.ok) {
@@ -441,7 +441,7 @@ function ie(e) {
         placeholder: "The prompt sent to the agent when this task runs.",
         className: "w-full bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono resize-y"
       }
-    )), /* @__PURE__ */ e.h("div", { className: "flex items-start gap-3" }, /* @__PURE__ */ e.h(j, { checked: b, onChange: v, label: "Reuse session", tone: "ok" }), /* @__PURE__ */ e.h("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ e.h("div", { className: "text-xs text-[var(--color-text-primary)]" }, "Reuse session"), /* @__PURE__ */ e.h("div", { className: "text-[10px] text-[var(--color-text-muted)] mt-0.5" }, "First run creates the agent session; later runs resume it to keep context.")))), T === "agentic_output" && /* @__PURE__ */ e.h(e.React.Fragment, null, /* @__PURE__ */ e.h("div", null, /* @__PURE__ */ e.h("label", { className: "block text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1" }, "Command"), /* @__PURE__ */ e.h(
+    )), /* @__PURE__ */ e.h("div", { className: "flex items-start gap-3" }, /* @__PURE__ */ e.h(I, { checked: b, onChange: v, label: "Reuse session", tone: "ok" }), /* @__PURE__ */ e.h("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ e.h("div", { className: "text-xs text-[var(--color-text-primary)]" }, "Reuse session"), /* @__PURE__ */ e.h("div", { className: "text-[10px] text-[var(--color-text-muted)] mt-0.5" }, "First run creates the agent session; later runs resume it to keep context.")))), T === "agentic_output" && /* @__PURE__ */ e.h(e.React.Fragment, null, /* @__PURE__ */ e.h("div", null, /* @__PURE__ */ e.h("label", { className: "block text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1" }, "Command"), /* @__PURE__ */ e.h(
       "textarea",
       {
         value: h,
@@ -453,7 +453,7 @@ function ie(e) {
     ), /* @__PURE__ */ e.h("div", { className: "text-[10px] text-[var(--color-text-muted)] mt-1" }, "Runs on every fire. The agent below is only invoked when the exit code is notable — this is what keeps the type cheap.")), /* @__PURE__ */ e.h("div", null, /* @__PURE__ */ e.h("label", { className: "block text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1" }, "Notify on exit code"), /* @__PURE__ */ e.h(
       "input",
       {
-        value: N,
+        value: k,
         onChange: (i) => ne(i.target.value),
         placeholder: "blank = any non-zero · or a list like 1,2,127",
         className: "w-full bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono"
@@ -476,8 +476,8 @@ function ie(e) {
         placeholder: "Instructions for the agent — what to do with the command's output when there's a difference.",
         className: "w-full bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded px-2 py-1.5 text-xs text-[var(--color-text-primary)] font-mono resize-y"
       }
-    )), /* @__PURE__ */ e.h("div", { className: "flex items-start gap-3" }, /* @__PURE__ */ e.h(j, { checked: b, onChange: v, label: "Reuse session", tone: "ok" }), /* @__PURE__ */ e.h("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ e.h("div", { className: "text-xs text-[var(--color-text-primary)]" }, "Reuse session"), /* @__PURE__ */ e.h("div", { className: "text-[10px] text-[var(--color-text-muted)] mt-0.5" }, "First triggered run creates the agent session; later runs resume it to keep context.")))), /* @__PURE__ */ e.h(X, { schedules: o, onChange: d }), /* @__PURE__ */ e.h("div", { className: "flex items-start gap-3" }, /* @__PURE__ */ e.h(
-      j,
+    )), /* @__PURE__ */ e.h("div", { className: "flex items-start gap-3" }, /* @__PURE__ */ e.h(I, { checked: b, onChange: v, label: "Reuse session", tone: "ok" }), /* @__PURE__ */ e.h("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ e.h("div", { className: "text-xs text-[var(--color-text-primary)]" }, "Reuse session"), /* @__PURE__ */ e.h("div", { className: "text-[10px] text-[var(--color-text-muted)] mt-0.5" }, "First triggered run creates the agent session; later runs resume it to keep context.")))), /* @__PURE__ */ e.h(X, { schedules: n, onChange: d }), /* @__PURE__ */ e.h("div", { className: "flex items-start gap-3" }, /* @__PURE__ */ e.h(
+      I,
       {
         checked: y,
         onChange: p,
@@ -495,33 +495,33 @@ function ie(e) {
       "button",
       {
         onClick: le,
-        disabled: n,
+        disabled: o,
         className: "px-3 py-1.5 text-xs rounded bg-[var(--color-accent)]/15 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/25 disabled:opacity-50"
       },
-      n ? "Saving…" : s ? "Create task" : "Save changes"
+      o ? "Saving…" : s ? "Create task" : "Save changes"
     ))));
   }
   function ee({ presentation: t, hideTaskTags: a, onClick: l }) {
-    const s = R(null), m = R(null), [x, C] = g(0.18), c = 1e3, o = 650, d = o / c;
-    k(() => {
+    const s = R(null), m = R(null), [x, C] = g(0.18), c = 1e3, n = 650, d = n / c;
+    N(() => {
       const p = m.current;
       if (!p || typeof ResizeObserver > "u") return;
       const w = new ResizeObserver((f) => {
-        for (const n of f) {
-          const S = n.contentRect.width;
+        for (const o of f) {
+          const S = o.contentRect.width;
           S > 0 && C(S / c);
         }
       });
       return w.observe(p), () => w.disconnect();
-    }, []), k(() => {
+    }, []), N(() => {
       const p = s.current;
       if (!(!p || !(t != null && t.html)))
         try {
           const w = p.contentDocument;
           w.open();
           const f = "<style>html,body{margin:0;padding:0;overflow:hidden;}*{max-width:100%;box-sizing:border-box;}</style>";
-          let n = t.html;
-          n = n.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ""), n = n.replace(/\s+on\w+="[^"]*"/gi, ""), n = n.replace(/\s+on\w+='[^']*'/gi, ""), n.includes("<head>") ? n = n.replace("<head>", "<head>" + f) : n.includes("<html>") ? n = n.replace("<html>", "<html><head>" + f + "</head>") : n = f + n, w.write(n), w.close();
+          let o = t.html;
+          o = o.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ""), o = o.replace(/\s+on\w+="[^"]*"/gi, ""), o = o.replace(/\s+on\w+='[^']*'/gi, ""), o.includes("<head>") ? o = o.replace("<head>", "<head>" + f) : o.includes("<html>") ? o = o.replace("<html>", "<html><head>" + f + "</head>") : o = f + o, w.write(o), w.close();
         } catch {
         }
     }, [t == null ? void 0 : t.html]);
@@ -552,7 +552,7 @@ function ie(e) {
               top: 0,
               left: 0,
               width: c,
-              height: o,
+              height: n,
               border: 0,
               pointerEvents: "none",
               transform: `scale(${x})`,
@@ -600,7 +600,7 @@ function ie(e) {
     ))) : /* @__PURE__ */ e.h("div", { className: "px-3 py-3 text-[11px] text-[var(--color-text-muted)] italic" }, "No runs yet.");
   }
   function ae() {
-    const [t, a] = g([]), [l, s] = g(null), [m, x] = g({}), [C, c] = g(null), o = _(async () => {
+    const [t, a] = g([]), [l, s] = g(null), [m, x] = g({}), [C, c] = g(null), n = _(async () => {
       try {
         const u = await (await e.sdk.api.fetch(e.app.apiUrl("/tasks"))).json();
         a(u.tasks || []);
@@ -608,24 +608,27 @@ function ie(e) {
         c(String(r));
       }
     }, []);
-    k(() => {
-      o();
-    }, [o]), k(() => {
-      const r = () => o();
+    N(() => {
+      n();
+    }, [n]), N(() => {
+      const r = setInterval(n, 4e3);
+      return () => clearInterval(r);
+    }, [n]), N(() => {
+      const r = () => n();
       return window.addEventListener("aw-task-update", r), () => window.removeEventListener("aw-task-update", r);
-    }, [o]);
+    }, [n]);
     const [d, y] = g({}), p = _(async () => {
       try {
         const u = await (await e.sdk.api.fetch("/api/apps/presentations/presentations")).json(), b = {}, v = {};
         for (const h of Array.isArray(u) ? u : []) {
           const $ = /* @__PURE__ */ new Set();
-          for (const N of h.tags || [])
-            typeof N == "string" && N.startsWith("task:") && $.add(N.slice(5));
-          for (const N of $)
-            v[N] || (v[N] = /* @__PURE__ */ new Set()), !v[N].has(h.id) && (v[N].add(h.id), (b[N] = b[N] || []).push(h));
+          for (const k of h.tags || [])
+            typeof k == "string" && k.startsWith("task:") && $.add(k.slice(5));
+          for (const k of $)
+            v[k] || (v[k] = /* @__PURE__ */ new Set()), !v[k].has(h.id) && (v[k].add(h.id), (b[k] = b[k] || []).push(h));
         }
         for (const h of Object.keys(b))
-          b[h].sort(($, N) => (N.created_at || 0) - ($.created_at || 0));
+          b[h].sort(($, k) => (k.created_at || 0) - ($.created_at || 0));
         y(b);
       } catch {
       }
@@ -636,16 +639,16 @@ function ie(e) {
       const v = new Set(u.map(($) => $.id)), h = [...u];
       for (const $ of b)
         v.has($.id) || h.push($);
-      return h.sort(($, N) => (N.created_at || 0) - ($.created_at || 0)), h;
+      return h.sort(($, k) => (k.created_at || 0) - ($.created_at || 0)), h;
     }, [d]);
-    k(() => {
+    N(() => {
       p();
-    }, [p]), k(() => {
+    }, [p]), N(() => {
       const r = () => p();
       return window.addEventListener("aw-presentation-update", r), () => window.removeEventListener("aw-presentation-update", r);
     }, [p]);
     const f = R({});
-    k(() => {
+    N(() => {
       const r = (u) => {
         var v;
         const b = (v = u.detail) == null ? void 0 : v.taskId;
@@ -656,16 +659,16 @@ function ie(e) {
       };
       return window.addEventListener("aw-focus-task", r), () => window.removeEventListener("aw-focus-task", r);
     }, []);
-    const n = async (r) => {
+    const o = async (r) => {
       try {
-        await e.sdk.api.fetch(e.app.apiUrl(`/tasks/${encodeURIComponent(r)}/run`), { method: "POST" }), o();
+        await e.sdk.api.fetch(e.app.apiUrl(`/tasks/${encodeURIComponent(r)}/run`), { method: "POST" }), n();
       } catch (u) {
         c(String(u));
       }
     }, S = async (r) => {
       if (confirm("Delete this task and its bound terminal session?"))
         try {
-          await e.sdk.api.fetch(e.app.apiUrl(`/tasks/${encodeURIComponent(r)}`), { method: "DELETE" }), o();
+          await e.sdk.api.fetch(e.app.apiUrl(`/tasks/${encodeURIComponent(r)}`), { method: "DELETE" }), n();
         } catch (u) {
           c(String(u));
         }
@@ -675,7 +678,7 @@ function ie(e) {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ enabled: !r.enabled })
-        }), o();
+        }), n();
       } catch (u) {
         c(String(u));
       }
@@ -698,7 +701,7 @@ function ie(e) {
         className: "px-3 py-1.5 text-xs rounded bg-[var(--color-accent)]/15 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/25"
       },
       "+ New task"
-    )), C && /* @__PURE__ */ e.h("div", { className: "mb-3 px-2 py-1.5 text-[11px] rounded bg-[var(--color-danger)]/10 text-[var(--color-danger)] border border-[var(--color-danger)]/30" }, C), t.length === 0 ? /* @__PURE__ */ e.h("div", { className: "px-3 py-12 text-center text-xs text-[var(--color-text-muted)] italic border border-dashed border-[var(--color-border)] rounded" }, 'No tasks yet. Click "+ New task" to create one.') : /* @__PURE__ */ e.h("div", { className: "border border-[var(--color-border)] rounded overflow-hidden" }, /* @__PURE__ */ e.h("div", { style: I, className: "items-center gap-2 px-3 py-2 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] bg-[var(--color-bg-header)] border-b border-[var(--color-border)]" }, /* @__PURE__ */ e.h("span", null, "Name"), /* @__PURE__ */ e.h("span", null, "CLI"), /* @__PURE__ */ e.h("span", null, "Schedule"), /* @__PURE__ */ e.h("span", null, "On"), /* @__PURE__ */ e.h("span", null, "Last run"), /* @__PURE__ */ e.h("span", null, "Presentation"), /* @__PURE__ */ e.h("span", { className: "text-right" }, "Actions")), t.map((r) => {
+    )), C && /* @__PURE__ */ e.h("div", { className: "mb-3 px-2 py-1.5 text-[11px] rounded bg-[var(--color-danger)]/10 text-[var(--color-danger)] border border-[var(--color-danger)]/30" }, C), t.length === 0 ? /* @__PURE__ */ e.h("div", { className: "px-3 py-12 text-center text-xs text-[var(--color-text-muted)] italic border border-dashed border-[var(--color-border)] rounded" }, 'No tasks yet. Click "+ New task" to create one.') : /* @__PURE__ */ e.h("div", { className: "border border-[var(--color-border)] rounded overflow-hidden" }, /* @__PURE__ */ e.h("div", { style: W, className: "items-center gap-2 px-3 py-2 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] bg-[var(--color-bg-header)] border-b border-[var(--color-border)]" }, /* @__PURE__ */ e.h("span", null, "Name"), /* @__PURE__ */ e.h("span", null, "CLI"), /* @__PURE__ */ e.h("span", null, "Schedule"), /* @__PURE__ */ e.h("span", null, "On"), /* @__PURE__ */ e.h("span", null, "Last run"), /* @__PURE__ */ e.h("span", null, "Presentation"), /* @__PURE__ */ e.h("span", { className: "text-right" }, "Actions")), t.map((r) => {
       const u = !!m[r.id], b = q(r.schedules);
       return /* @__PURE__ */ e.h(
         "div",
@@ -709,7 +712,7 @@ function ie(e) {
           },
           className: "border-b border-[var(--color-border)] last:border-b-0"
         },
-        /* @__PURE__ */ e.h("div", { style: I, className: "items-center gap-2 px-3 py-2 hover:bg-white/[0.02]" }, /* @__PURE__ */ e.h(
+        /* @__PURE__ */ e.h("div", { style: W, className: "items-center gap-2 px-3 py-2 hover:bg-white/[0.02]" }, /* @__PURE__ */ e.h(
           "button",
           {
             onClick: () => x((v) => ({ ...v, [r.id]: !u })),
@@ -757,7 +760,7 @@ function ie(e) {
         })(), /* @__PURE__ */ e.h("span", { className: "flex items-center justify-end gap-1" }, /* @__PURE__ */ e.h(
           "button",
           {
-            onClick: () => n(r.id),
+            onClick: () => o(r.id),
             title: "Run now",
             className: "p-1 rounded hover:bg-white/10 text-green-400"
           },
@@ -796,7 +799,7 @@ function ie(e) {
         task: l === "new" ? null : l,
         onClose: () => s(null),
         onSaved: () => {
-          s(null), o();
+          s(null), n();
         }
       }
     ));

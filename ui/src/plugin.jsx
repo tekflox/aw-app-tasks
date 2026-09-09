@@ -1007,6 +1007,18 @@ export function register(host) {
       reload();
     }, [reload]);
 
+    // No core capability broadcasts task_update onto this window yet (see
+    // manager.py header) — poll while the window is mounted so a running
+    // pill actually clears when its run finishes, instead of staying
+    // "running" until the window is closed and reopened. Same
+    // refresh-then-setInterval-then-clearInterval shape as WhatsAppTab's
+    // useWhatsAppStatus. Cheap: this hits the same /tasks list the mount
+    // fetch already does, and the window is closed most of the time.
+    useEffect(() => {
+      const id = setInterval(reload, 4000);
+      return () => clearInterval(id);
+    }, [reload]);
+
     useEffect(() => {
       const handler = () => reload();
       window.addEventListener('aw-task-update', handler);
