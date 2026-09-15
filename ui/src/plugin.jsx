@@ -1046,7 +1046,9 @@ export function register(host) {
   }
 
   function TasksWindowBody() {
-    const [tasks, setTasks] = useState([]);
+    // null = still loading the first GET /tasks; [] = loaded and genuinely
+    // empty. Keeps loading and empty visually distinct without a second flag.
+    const [tasks, setTasks] = useState(null);
     const [editing, setEditing] = useState(null);
     const [expanded, setExpanded] = useState({});
     const [error, setError] = useState(null);
@@ -1058,6 +1060,9 @@ export function register(host) {
         setTasks(data.tasks || []);
       } catch (e) {
         setError(String(e));
+        // Fall out of the loading state on a failed first load — leave any
+        // already-loaded list untouched on a later reload's error.
+        setTasks((prev) => prev ?? []);
       }
     }, []);
 
@@ -1230,7 +1235,11 @@ export function register(host) {
           </div>
         )}
 
-        {tasks.length === 0 ? (
+        {tasks === null ? (
+          <div className="px-3 py-12 text-center text-xs text-[var(--color-text-muted)] italic border border-dashed border-[var(--color-border)] rounded">
+            Loading tasks…
+          </div>
+        ) : tasks.length === 0 ? (
           <div className="px-3 py-12 text-center text-xs text-[var(--color-text-muted)] italic border border-dashed border-[var(--color-border)] rounded">
             No tasks yet. Click "+ New task" to create one.
           </div>
