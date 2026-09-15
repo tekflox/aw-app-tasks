@@ -3,10 +3,12 @@
 ported:
 
 * ``terminal``       — writes the prompt into a reusable CLI session, via
-                        ``terminal_client.py`` (best-effort HTTP against
-                        ``config.terminals_api_base`` — see that module's
-                        docstring for the "not yet verified against a live
-                        core terminals API" caveat).
+                        ``terminal_client.py`` (HTTP against
+                        ``config.terminals_api_base``, defaulting to
+                        ``http://127.0.0.1:{AW_PORT}`` since the core's own
+                        terminals API always lives in the same container —
+                        ``config.terminals_api_base`` is left as an explicit
+                        override for anyone pointing at a different one).
 * ``agentic_output``  — runs a cheap command; on a notable exit code, hands
                         the output to the configured Agents Platform agent
                         to interpret (same delivery mechanism as
@@ -40,6 +42,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 
 from . import agentic_output, agents_platform_client, terminal_client
@@ -205,14 +208,9 @@ class TaskManager:
     # ------------------------------------------------------------------
 
     async def _run_terminal(self, task: dict, run: dict) -> None:
-        base = (self._ctx.config or {}).get("terminals_api_base")
-        if not base:
-            run["status"] = "error"
-            run["error"] = (
-                "terminal task type needs config.terminals_api_base set to the "
-                "workspace's terminals API — see aw-app.json config_schema"
-            )
-            return
+        base = (self._ctx.config or {}).get("terminals_api_base") or (
+            f"http://127.0.0.1:{os.environ.get('AW_PORT', '9030')}"
+        )
 
         prompt = (task.get("prompt") or "").rstrip()
         session_name = f"Task: {task['name']}"

@@ -105,9 +105,10 @@ otherwise come back with `open_task`.
   This is the type for "run this check and tell me if it breaks", at zero cost
   on the happy path.
 * **`terminal`** — ensures a reusable CLI session named `"Task: <name>"` and
-  writes `prompt` into it. Needs `config.terminals_api_base`; without it runs
-  record a clear `status=error` rather than silently doing nothing. The least
-  reliable of the three — prefer `agent_prompt`.
+  writes `prompt` into it. `config.terminals_api_base` defaults to the
+  workspace's own terminals API (`http://127.0.0.1:{AW_PORT}`); set it only to
+  point at a different one. The least reliable of the three — prefer
+  `agent_prompt`.
 
 **A task's `command` runs inside the aw-workspace container.** It has `docker`
 but no `podman`, and none of an agent runner's tooling.

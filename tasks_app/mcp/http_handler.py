@@ -63,10 +63,11 @@ _TYPE_DOC = (
     "Task type. 'agent_prompt' sends `prompt` to the Agents Platform agent "
     "named by `agent_slug`. 'agentic_output' runs `command` first and only "
     "pays for that agent when the exit code is notable. 'terminal' writes "
-    "`prompt` into a reusable CLI session and needs this app's "
-    "terminals_api_base config — it is the least used of the three. Note "
-    "that a task's `command` runs inside the aw-workspace container, which "
-    "has docker but no podman."
+    "`prompt` into a reusable CLI session against this app's "
+    "terminals_api_base config, which defaults to the workspace's own "
+    "terminals API — it is the least used of the three. Note that a task's "
+    "`command` runs inside the aw-workspace container, which has docker but "
+    "no podman."
 )
 
 _SLUG_DOC = (

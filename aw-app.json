@@ -84,7 +84,7 @@
       },
       "terminals_api_base": {
         "type": "string",
-        "description": "Base URL of the workspace's own terminals API (core, e.g. http://127.0.0.1:9123) used by 'terminal'-type tasks to create/reuse a CLI session and write the prompt into it. Leave unset to disable 'terminal'-type task execution \u2014 'agentic_output' tasks work regardless since they run their command directly."
+        "description": "Base URL of the workspace's own terminals API (core) used by 'terminal'-type tasks to create/reuse a CLI session and write the prompt into it. Defaults to http://127.0.0.1:{AW_PORT} \u2014 the core always serves its terminals API in the same container \u2014 so leave this unset unless you need to point at a different terminals API (e.g. cross-container debugging)."
       },
       "agents_platform_base": {
         "type": "string",
