@@ -31,6 +31,13 @@ class AgentsPlatformError(RuntimeError):
     pass
 
 
+class AgentsPlatformUnauthorized(AgentsPlatformError):
+    """The configured ``agents_platform_token`` was rejected (HTTP 401) —
+    distinct from any other failure so a caller can refresh the token and
+    retry, rather than surfacing every non-200 identically. This client
+    stays credential-agnostic: it raises on a 401, it does not mint."""
+
+
 async def list_agents(*, base: str, token: str) -> list[dict]:
     """``GET {base}/api/agents`` — used to populate the agent picker in the
     Tasks UI. Returns an empty list (rather than raising) on any failure so
@@ -71,6 +78,9 @@ async def run_agent(
             r = await c.post(f"/api/agents/{slug}/run", json=body)
         except httpx.HTTPError as e:
             raise AgentsPlatformError(f"failed to start run: {e}") from e
+        if r.status_code == 401:
+            raise AgentsPlatformUnauthorized(
+                f"failed to start run: HTTP {r.status_code} {r.text[:500]}")
         if r.status_code != 200:
             raise AgentsPlatformError(
                 f"failed to start run: HTTP {r.status_code} {r.text[:500]}")

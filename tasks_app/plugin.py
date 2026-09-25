@@ -17,10 +17,12 @@ Ports the monolith's ``/api/tasks/*`` + the cron-tick loop
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
 
+from . import identity_token as identity_token_mod
 from . import routes as routes_mod
 from .manager import TaskManager
 from .mcp import self_register as mcp_self_register
@@ -31,6 +33,12 @@ log = logging.getLogger("aw_apps.tasks")
 
 DEFAULT_SCHEDULER_INTERVAL_S = 5.0
 MIN_SCHEDULER_INTERVAL_S = 1.0
+
+# identity_token refresh cadence (Kanban design:tasks-app-token-auto-refresh),
+# copied from aw-app-agents-platform-runners's own IDENTITY_TOKEN_INTERVAL_S —
+# plenty against a 24h-default, half-life refresh policy. See
+# identity_token.py's module docstring for the mint+persist design.
+IDENTITY_TOKEN_INTERVAL_S = 6.0 * 3600.0
 
 
 def _scheduler_interval_s(ctx) -> float:
@@ -73,8 +81,41 @@ class TasksAppPlugin:
                 run_immediately=False,
             )
             log.info("aw-app-tasks: scheduler watchdog registered")
+            self._register_identity_token_watchdog(ctx)
 
         log.info("aw-app-tasks activated")
+
+    def _register_identity_token_watchdog(self, ctx) -> None:
+        """Register the half-life ``agents_platform_token`` refresh watchdog
+        (Kanban ``design:tasks-app-token-auto-refresh``). See
+        identity_token.py for the mint+persist design and refresh policy —
+        this alone cannot catch a token invalidated before its half-life is
+        up (signing-key rotation, owner change, a Postgres cluster restore);
+        that half is the refresh-on-401-retry in manager.py's
+        ``_dispatch_agent``. Ship both or the card reopens.
+
+        ``run_immediately=True``: ``WatchdogSupervisor.resume()`` (aw-
+        workspace core) restarts a ``run_immediately=False`` task's
+        sleep-then-tick loop from scratch on every ``RedisLease("core")``
+        leadership handoff — the 6h clock would reset to zero on an ordinary
+        Redis blip rather than reflecting the token's real age. Same
+        reasoning, same fix, as aw-app-agents-platform-runners's identical
+        watchdog.
+        """
+        async def _refresh() -> None:
+            try:
+                refreshed = await asyncio.to_thread(identity_token_mod.refresh, ctx.config)
+            except Exception:  # noqa: BLE001 — a watchdog tick must never raise
+                log.warning("identity_token: refresh watchdog tick failed", exc_info=True)
+                return
+            if refreshed:
+                ctx.config["agents_platform_token"] = refreshed
+                log.info("identity_token: refreshed agents_platform_token")
+
+        ctx.watchdog.register("identity-token", _refresh, IDENTITY_TOKEN_INTERVAL_S,
+                              run_immediately=True)
+        log.info("aw-app-tasks: identity-token refresh watchdog registered (every %.0fs)",
+                 IDENTITY_TOKEN_INTERVAL_S)
 
     def register_contributed_task(self, app_id: str, spec: dict) -> bool:
         """Seed one ``contributes.tasks`` declaration. True if it was created.

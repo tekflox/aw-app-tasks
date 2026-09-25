@@ -45,7 +45,7 @@ import logging
 import os
 import time
 
-from . import agentic_output, agents_platform_client, terminal_client
+from . import agentic_output, agents_platform_client, identity_token, terminal_client
 from .store import TaskStore
 from .updates import TaskUpdates
 
@@ -293,82 +293,67 @@ class TaskManager:
             )
             return
 
-        cfg = self._ctx.config or {}
-        base = cfg.get("agents_platform_base")
-        token = cfg.get("agents_platform_token")
-        if not base or not token:
-            run["status"] = "error"
-            run["error"] = (
-                "agentic_output task needs config.agents_platform_base and "
-                "config.agents_platform_token set — see aw-app.json config_schema"
-            )
-            return
-
         base_prompt = (task.get("prompt") or "").strip()
         combined_prompt = (
             f"{base_prompt}\n\nSaída do comando (exit code {exit_code}):\n"
             f"{agentic_output.truncate(output)}"
         ).strip()
 
-        reuse = bool(task.get("reuse_session"))
-        prior_session = task.get("ap_session_id") if reuse else None
-        target_slug = cfg.get("agents_platform_target") or "adhoc"
-
-        try:
-            result = await agents_platform_client.run_agent(
-                base=base, token=token, slug=slug, prompt=combined_prompt,
-                target_slug=target_slug, session_id=prior_session,
-            )
-        except agents_platform_client.AgentsPlatformError as e:
-            run["status"] = "error"
-            run["error"] = str(e)
-            return
-
-        # The agent was actually invoked (and paid for) for this exit code —
-        # debounce it until the condition changes.
-        self.store.set_last_notified_exit_code(task["id"], exit_code)
-
-        run["session_id"] = result.get("run_id")
-        run["output"] = result.get("text")
-        if result.get("is_error"):
-            run["status"] = "error"
-            run["error"] = result.get("text") or "agents-platform run failed"
-        else:
-            run["status"] = "ok"
-
-        if reuse and result.get("session_id"):
-            try:
-                self.store.set_ap_session_id(task["id"], result["session_id"])
-            except Exception:
-                logger.warning("Task %s: could not persist ap_session_id", task["id"])
+        dispatched = await self._dispatch_agent(task, run, prompt=combined_prompt)
+        if dispatched:
+            # The agent was actually invoked (and paid for) for this exit code —
+            # debounce it until the condition changes.
+            self.store.set_last_notified_exit_code(task["id"], exit_code)
 
     # ------------------------------------------------------------------
     # agent_prompt
     # ------------------------------------------------------------------
 
     async def _run_agent_prompt(self, task: dict, run: dict) -> None:
+        prompt = (task.get("prompt") or "").strip()
+        if not prompt:
+            run["status"] = "error"
+            run["error"] = "agent_prompt task has no prompt configured"
+            return
+
+        await self._dispatch_agent(task, run, prompt=prompt)
+
+    # ------------------------------------------------------------------
+    # shared agents-platform dispatch (agentic_output + agent_prompt)
+    # ------------------------------------------------------------------
+
+    async def _dispatch_agent(self, task: dict, run: dict, *, prompt: str) -> bool:
+        """Call agents-platform-multitenant for either task type, settle
+        ``run``, and persist session reuse. On an ``AgentsPlatformUnauthorized``
+        (HTTP 401 — the configured token was rejected, not necessarily due
+        yet by half-life: a signing-key rotation, an owner change, or a
+        Postgres cluster restore can all invalidate it early) force-refresh
+        the token via ``identity_token.refresh`` and retry exactly once.
+
+        Returns True once agents-platform-multitenant actually answered the
+        run request (whether or not the run itself succeeded) — False for a
+        pre-flight validation failure or a transport error that survived the
+        retry. Callers use this to gate a dispatch-specific side effect
+        (agentic_output's debounce marker) — matches this method's
+        pre-unification behaviour, where only a completed HTTP round trip
+        counted.
+        """
         cfg = self._ctx.config or {}
         base = cfg.get("agents_platform_base")
         token = cfg.get("agents_platform_token")
         if not base or not token:
             run["status"] = "error"
             run["error"] = (
-                "agent_prompt task type needs config.agents_platform_base and "
-                "config.agents_platform_token set — see aw-app.json config_schema "
-                "(same values aw-app-agents-platform-runners uses)"
+                f"{task.get('type')} task needs config.agents_platform_base and "
+                "config.agents_platform_token set — see aw-app.json config_schema"
             )
-            return
+            return False
 
         slug = (task.get("agent_slug") or "").strip()
         if not slug:
             run["status"] = "error"
-            run["error"] = "agent_prompt task has no agent_slug configured"
-            return
-        prompt = (task.get("prompt") or "").strip()
-        if not prompt:
-            run["status"] = "error"
-            run["error"] = "agent_prompt task has no prompt configured"
-            return
+            run["error"] = f"{task.get('type')} task has no agent_slug configured"
+            return False
 
         reuse = bool(task.get("reuse_session"))
         prior_session = task.get("ap_session_id") if reuse else None
@@ -379,10 +364,29 @@ class TaskManager:
                 base=base, token=token, slug=slug, prompt=prompt,
                 target_slug=target_slug, session_id=prior_session,
             )
+        except agents_platform_client.AgentsPlatformUnauthorized:
+            # refresh() is sync httpx inside this async app — wrap in
+            # asyncio.to_thread so it doesn't block the event loop that also
+            # serves the rest of the workspace.
+            refreshed = await asyncio.to_thread(identity_token.refresh, cfg, force=True)
+            if not refreshed:
+                run["status"] = "error"
+                run["error"] = "agents-platform rejected the token (401) and refresh failed"
+                return False
+            self._ctx.config["agents_platform_token"] = refreshed
+            try:
+                result = await agents_platform_client.run_agent(
+                    base=base, token=refreshed, slug=slug, prompt=prompt,
+                    target_slug=target_slug, session_id=prior_session,
+                )
+            except agents_platform_client.AgentsPlatformError as e:
+                run["status"] = "error"
+                run["error"] = str(e)
+                return False
         except agents_platform_client.AgentsPlatformError as e:
             run["status"] = "error"
             run["error"] = str(e)
-            return
+            return False
 
         run["session_id"] = result.get("run_id")
         run["output"] = result.get("text")
@@ -397,6 +401,7 @@ class TaskManager:
                 self.store.set_ap_session_id(task["id"], result["session_id"])
             except Exception:
                 logger.warning("Task %s: could not persist ap_session_id", task["id"])
+        return True
 
     # ------------------------------------------------------------------
     # notifications
