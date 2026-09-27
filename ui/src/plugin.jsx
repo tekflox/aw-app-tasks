@@ -67,6 +67,15 @@ export function register(host) {
   // (aw-ws/1 §7/§9.1) — this app can't import it directly (no
   // aw-workspace-ui internals across the bundle boundary), so it's reached
   // through host.sdk.ws.createSharedSocket instead.
+  //
+  // host.sdk.ws only exists on an aw-workspace-ui SPA new enough to expose
+  // it — this app releases independently of the SPA it's installed against,
+  // and a stale-SPA + newer-app combination is real in this estate (the
+  // deploy webhook can report success while the served bundle stays stale).
+  // Calling it unconditionally would throw synchronously inside register()
+  // and take down this plugin's whole panel (nav row + window body) with a
+  // symptom indistinguishable from a denied ui:code grant. Feature-detect
+  // and degrade to REST-only instead — `client` above still works either way.
   // ------------------------------------------------------------------
 
   // Tiny pub/sub so a slot can SHOW "live updates stopped — session expired"
@@ -76,20 +85,26 @@ export function register(host) {
   let lastFatal = null;
   const fatalListeners = new Set();
 
-  const taskUpdates = host.sdk.ws.createSharedSocket({
-    url: () => host.app.wsUrl('/ws/updates'),
-    initType: 'tasks_init',
-    onFrame: (msg) => {
-      if (msg.type !== 'tasks_update') return;
-      window.dispatchEvent(new CustomEvent('aw-task-update', { detail: msg.data }));
-    },
-    onStatus: ({ state, message }) => {
-      if (state === 'fatal') lastFatal = message;
-      else if (state === 'open') lastFatal = null;
-      else return;
-      for (const fn of fatalListeners) fn(lastFatal);
-    },
-  });
+  const createSharedSocket = host.sdk.ws?.createSharedSocket;
+  if (!createSharedSocket) {
+    console.warn('[tasks] host.sdk.ws.createSharedSocket is unavailable (SPA too old for aw-ws/1 §9.1) — live task updates disabled, falling back to REST-only.');
+  }
+  const taskUpdates = createSharedSocket
+    ? createSharedSocket({
+        url: () => host.app.wsUrl('/ws/updates'),
+        initType: 'tasks_init',
+        onFrame: (msg) => {
+          if (msg.type !== 'tasks_update') return;
+          window.dispatchEvent(new CustomEvent('aw-task-update', { detail: msg.data }));
+        },
+        onStatus: ({ state, message }) => {
+          if (state === 'fatal') lastFatal = message;
+          else if (state === 'open') lastFatal = null;
+          else return;
+          for (const fn of fatalListeners) fn(lastFatal);
+        },
+      })
+    : { retain: () => () => {} }; // no socket to hold open or release
 
   function useTaskUpdates(reload) {
     // Hold the shared socket open while this slot is mounted...
