@@ -11,7 +11,40 @@ on:
         options: [major]
 
 jobs:
+  # ui/dist is a COMMITTED, prebuilt bundle (contributes.frontend.bundle in
+  # aw-app.json) — there is no build step at install or serve time, and
+  # app-release.yml below is Python-only and never touches ui/ either. So a
+  # source change under ui/src with no matching rebuild of ui/dist ships
+  # silently: the release tags and publishes whatever bytes happen to be
+  # committed, live or stale. Caught live 2026-09-27 — the committed dist
+  # predated the aw-ws/1 §9.1 migration entirely, so the deployed plugin had
+  # never run the code in ui/src at all. This job is the guard: rebuild from
+  # source and fail if that doesn't match what's committed.
+  check-dist:
+    # Same skip condition as app-release.yml's own `release` job — the bot's
+    # own version-bump commit re-triggers this push event and never touches
+    # ui/, so there is nothing to check.
+    if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Rebuild ui/dist and diff against the committed copy
+        run: |
+          set -euo pipefail
+          cd ui
+          npm ci --cache "$RUNNER_TEMP/npm-cache"
+          npm run build
+          cd ..
+          if ! git diff --exit-code -- ui/dist; then
+            echo "::error::ui/dist does not match a fresh build of ui/src — commit the rebuilt bundle (cd ui && npm run build) before pushing."
+            exit 1
+          fi
+
   release:
+    needs: check-dist
     # Moving ref: bumping app-release.yml in aw-marketplace propagates here
     # automatically. Move to @v1 once aw-marketplace cuts a first tag.
     #
