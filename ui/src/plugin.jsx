@@ -36,7 +36,6 @@
 //    directly with the literal path — same mechanism, just not app-scoped.
 
 import { createClient } from './client.js';
-import { createSharedSocket } from './ws.js';
 
 export function register(host) {
   const client = createClient({
@@ -53,8 +52,8 @@ export function register(host) {
   //
   // ONE connection for both slots. Neither is persistently mounted — the nav
   // row only exists while the Workspace popover is open, the window body only
-  // while the window is open — so ws.js ref-counts: the socket opens on the
-  // first retain() and closes on the last release.
+  // while the window is open — so the shared client ref-counts: the socket
+  // opens on the first retain() and closes on the last release.
   //
   // The frame is a nudge, not the data (an ephemeral /ws/status-kind socket,
   // aw-ws/1 §1.1.1): it says WHICH task changed, and both slots then refetch
@@ -63,17 +62,23 @@ export function register(host) {
   // dispatches (aw-workspace-ui useComponentStatus.js) — so the listeners
   // both slots have carried since the port, dead until now, finally fire.
   // Dispatched here, once per frame, rather than per subscriber.
+  //
+  // The client itself lives in aw-workspace-ui's src/hooks/useSharedSocket.js
+  // (aw-ws/1 §7/§9.1) — this app can't import it directly (no
+  // aw-workspace-ui internals across the bundle boundary), so it's reached
+  // through host.sdk.ws.createSharedSocket instead.
   // ------------------------------------------------------------------
 
   // Tiny pub/sub so a slot can SHOW "live updates stopped — session expired"
   // rather than silently going stale, which is the whole point of §7.1's
   // close-code rule. Only fatal states get here; a transient close is what
-  // ws.js's backoff is for.
+  // the shared client's backoff is for.
   let lastFatal = null;
   const fatalListeners = new Set();
 
-  const taskUpdates = createSharedSocket({
+  const taskUpdates = host.sdk.ws.createSharedSocket({
     url: () => host.app.wsUrl('/ws/updates'),
+    initType: 'tasks_init',
     onFrame: (msg) => {
       if (msg.type !== 'tasks_update') return;
       window.dispatchEvent(new CustomEvent('aw-task-update', { detail: msg.data }));
@@ -1228,7 +1233,8 @@ export function register(host) {
 
         {/* A 4401/4403/4426 close means this list has stopped updating itself
             and will not resume — say so, rather than quietly going stale
-            (aw-ws/1 §7.1). Transient closes never reach here; ws.js reconnects. */}
+            (aw-ws/1 §7.1). Transient closes never reach here; the shared
+            client (host.sdk.ws.createSharedSocket) reconnects. */}
         {updatesFatal && (
           <div className="mb-3 px-2 py-1.5 text-[11px] rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/30">
             {updatesFatal} Reload the page to resume.
