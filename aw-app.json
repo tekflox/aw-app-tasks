@@ -26,6 +26,7 @@
     "watchdog:tasks",
     "notifications:send",
     "net:outbound",
+    "state:own",
     "ui:code",
     "ui:slots:core.nav.workspace"
   ],

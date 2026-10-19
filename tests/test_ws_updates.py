@@ -397,3 +397,82 @@ class TestCrossWorkerFanOutOverRealRedis:
         frame = json.loads(received[-1])
         _assert_valid_envelope(frame)
         assert frame["data"]["task_id"] == marker
+
+
+def _ctx_state_available() -> bool:
+    """Both halves have to be there: core's ``src.apps.base.AppContext``
+    (absent when this repo's tests run standalone) and a live Redis — same
+    posture as ``_real_relay_available`` above, checking the facade this app
+    now goes through instead of ``src.libs.redis_coord`` directly."""
+    try:
+        import redis as sync_redis  # noqa: F401
+
+        sys.path.insert(0, "/opt/aw-workspace")
+        from src.apps.base import AppContext  # noqa: F401
+
+        return bool(sync_redis.Redis.from_url(
+            _redis_url(), socket_connect_timeout=2).ping())
+    except Exception:
+        return False
+
+
+def _fresh_ctx(app_id: str = "tasks"):
+    """A real, minimal ``AppContext`` granted ``state:own`` — same
+    construction ``src/tests/integration/apps/test_state_facade_multiworker.py``
+    uses to prove ``ctx.state`` cross-worker. Two of these, one per
+    simulated worker, share nothing in Python — only the Redis both their
+    ``ctx.state`` facades resolve to."""
+    from src.apps.base import AppContext
+
+    class _Journal:
+        def record(self, *a, **kw):
+            pass
+
+    class _Runtime:
+        journal = _Journal()
+
+    return AppContext(runtime=_Runtime(), app_id=app_id, version="1.0.0",
+                      granted_permissions=["state:own"], config={},
+                      package_dir="/tmp/" + app_id)
+
+
+@pytest.mark.skipif(
+    not _ctx_state_available(),
+    reason="needs an aw-workspace checkout on sys.path AND a reachable Redis")
+class TestCrossWorkerFanOutOverCtxState:
+    """Same regression as ``TestCrossWorkerFanOutOverRealRedis``, now proved
+    against the PRODUCTION transport: ``TaskUpdates(ctx=...)`` — migrated
+    off a direct ``src.libs.redis_coord`` import onto ``ctx.state.broadcast``
+    (Kanban 3fe5bf3b-9510-81d6-bab5-f69e1580ba40, docs/standards/
+    app-shared-state.md). Fails against the pre-migration module: that
+    ``TaskUpdates`` had no ``ctx`` kwarg at all, so this call would raise
+    ``TypeError`` before ever reaching a relay.
+    """
+
+    def test_publish_on_worker_a_reaches_a_listener_on_worker_b(self):
+        async def scenario():
+            os.environ["AW_WORKSPACE"] = f"tasks-ctxstate-test-{time.time()}"
+            worker_a = TaskUpdates(ctx=_fresh_ctx())
+            worker_b = TaskUpdates(ctx=_fresh_ctx())
+            await worker_a.start_relay()
+            await worker_b.start_relay()
+
+            ws_b = FakeWebSocket()
+            worker_b.add_listener(ws_b)
+
+            marker = f"t-{time.time()}"
+            await worker_a.publish(task_id=marker, action="finish", status="ok")
+
+            deadline = time.time() + 5.0
+            while time.time() < deadline and not ws_b.received:
+                await asyncio.sleep(0.05)
+
+            await worker_a.aclose()
+            await worker_b.aclose()
+            return marker, ws_b.received
+
+        marker, received = run(scenario())
+        assert received, "nothing crossed ctx.state's real Redis relay"
+        frame = json.loads(received[-1])
+        _assert_valid_envelope(frame)
+        assert frame["data"]["task_id"] == marker

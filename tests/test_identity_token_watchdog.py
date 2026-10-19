@@ -81,6 +81,9 @@ class _FakeStore:
 
 
 class _FakeUpdates:
+    def __init__(self, *, ctx=None, **kwargs) -> None:
+        pass
+
     async def start_relay(self) -> None:
         return None
 

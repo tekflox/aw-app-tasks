@@ -54,7 +54,7 @@ class TasksAppPlugin:
     async def activate(self, ctx) -> None:
         self.ctx = ctx
         self.store = TaskStore(ctx)
-        self.updates = TaskUpdates()
+        self.updates = TaskUpdates(ctx=ctx)
         self.manager = TaskManager(ctx, self.store, self.updates)
 
         # ATTACH half (aw-workspace src/apps/lifecycle.py) — activate() runs

@@ -26,13 +26,16 @@ for the *cron* path specifically: the scheduler tick runs under core's
 leader worker — without this relay a cron update would reach roughly 1 in 10
 open windows.
 
-That fan-out uses ``src.libs.redis_coord.RedisBroadcaster`` **directly**. A
-Tier-1 in-process app importing core's coordination primitive is already the
-established pattern — ``apps/devctl/devctl_app/relay.py`` does exactly this
-for its cross-worker eval relay — and the alternative (a ``ctx.broadcast``
-facade in core) would need a core release before this app could use it, two
-deploys to wrap a two-line import. Revisit if a third app writes the same
-relay.
+That fan-out used to go through ``src.libs.redis_coord.RedisBroadcaster``
+**directly** — the module docstring here argued core's ``ctx.broadcast``
+facade didn't exist yet and waiting for one would cost a core release. It
+shipped 2026-10-09 as ``ctx.state`` (``docs/standards/app-shared-state.md``);
+this app now asks for the ``state:own`` capability and goes through
+``ctx.state.broadcast`` in production. The raw import survives only as an
+explicit, test-only override (``broadcaster=``) — see
+``_CtxBroadcastAdapter`` below and ``tests/test_ws_updates.py``'s
+``TestCrossWorkerFanOutOverRealRedis``, which still proves the underlying
+primitive against a real Redis.
 
 The single-delivery-path rule from ``src/api/notifications.py::_publish`` is
 copied verbatim and matters: the producer only ever PUBLISHes, and each
@@ -51,10 +54,42 @@ log = logging.getLogger("tasks_app.updates")
 #: ``data.protocol`` in the ``tasks_init`` handshake (standard §4.3).
 PROTOCOL = 1
 
-#: RedisBroadcaster topic. Namespaced to this app: the relay is a PSUBSCRIBE
-#: over every topic in the workspace namespace, so this handler *will* see
-#: other subsystems' messages and has to filter.
+#: Topic label threaded through ``_on_relay_message``/the ``broadcaster=``
+#: test double's ``RedisBroadcaster``-shaped interface (that relay is a
+#: PSUBSCRIBE over every topic in the workspace namespace, so a handler
+#: speaking that interface has to filter on this). ``ctx.state.broadcast``
+#: (the production path) scopes subscriptions per-topic itself, so
+#: ``_CtxBroadcastAdapter`` uses its own bare local name instead — see below.
 RELAY_TOPIC = "tasks:updates"
+
+
+class _CtxBroadcastAdapter:
+    """Adapts ``ctx.state.broadcast`` (single bare-topic publish/subscribe,
+    ``state:own``) to the ``RedisBroadcaster``-shaped interface the rest of
+    this module already speaks — ``start_relay(handler)`` /
+    ``publish(topic, payload)`` / ``stop()`` — so the production path can
+    move onto the facade without touching the ``broadcaster=`` test doubles
+    in ``tests/test_ws_updates.py``, which inject that interface directly.
+    """
+
+    #: Bare local name ``ctx.state.broadcast`` namespaces under this app's
+    #: own id — unlike ``RELAY_TOPIC`` this never needs a colon-free format
+    #: concession, so it can just be the one topic this app ever uses.
+    _TOPIC = "updates"
+
+    def __init__(self, ctx) -> None:
+        self._ctx = ctx
+
+    async def start_relay(self, handler) -> None:
+        async def _dispatch(payload: dict) -> None:
+            await handler(RELAY_TOPIC, payload)
+        await self._ctx.state.broadcast.subscribe(self._TOPIC, _dispatch)
+
+    async def publish(self, topic: str, payload: dict) -> None:
+        await self._ctx.state.broadcast.publish(self._TOPIC, payload)
+
+    async def stop(self) -> None:
+        await self._ctx.state.broadcast.aclose()
 
 
 class TaskUpdates:
@@ -63,13 +98,15 @@ class TaskUpdates:
 
     Modelled on ``src/api/notifications.py``'s ``NotificationManager``.
     ``broadcaster`` is injectable purely so the cross-worker tests can stand
-    two of these up over one bus without a live Redis; production passes
-    nothing and gets ``RedisBroadcaster``.
+    two of these up over one bus (fake or a real ``RedisBroadcaster``)
+    without going through ``ctx``; production passes ``ctx`` and gets
+    ``_CtxBroadcastAdapter`` wrapping ``ctx.state.broadcast``.
     """
 
-    def __init__(self, *, share: bool = True, broadcaster=None):
+    def __init__(self, *, ctx=None, share: bool = True, broadcaster=None):
         self._listeners: set = set()
         self._share = share
+        self._ctx = ctx
         self._broadcaster = broadcaster
         self._relay_up = False
 
@@ -80,15 +117,17 @@ class TaskUpdates:
 
         Never raises: a workspace whose Redis is unreachable still has to
         boot, and degrades to exactly ``AW_WORKSPACE_WORKERS=1`` behaviour —
-        every listener on the publishing worker still gets the frame.
+        every listener on the publishing worker still gets the frame. With
+        neither an injected ``broadcaster`` nor a ``ctx`` (``state:own`` not
+        granted, or none passed) this degrades the same way.
         """
         if not self._share:
             return
         try:
             if self._broadcaster is None:
-                from src.libs.redis_coord import RedisBroadcaster
-
-                self._broadcaster = RedisBroadcaster()
+                if self._ctx is None:
+                    return
+                self._broadcaster = _CtxBroadcastAdapter(self._ctx)
             await self._broadcaster.start_relay(self._on_relay_message)
             self._relay_up = True
             log.info("aw-app-tasks: subscribed to the %r relay for cross-worker "
