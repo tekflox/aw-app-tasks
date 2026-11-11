@@ -13,6 +13,8 @@ what to pass instead.
 """
 from __future__ import annotations
 
+import re
+
 from . import scheduling
 
 # The task types whose whole job is to hand work to an Agents Platform agent.
@@ -26,6 +28,30 @@ _NO_SLUG = (
     "happens. Pass the slug of an Agents Platform agent; `list_clis` "
     "returns the ones this workspace can reach."
 )
+
+# Same shape aw-workspace core enforces for contributes.agents[].slug
+# (src/apps/manifest.py's SLUG_RE) — one convention across the workspace for
+# what a "slug" looks like, rather than a tasks-specific one nobody expects.
+_SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
+
+
+def normalize_slug(raw) -> tuple[str | None, str | None]:
+    """``(normalized slug or None, error)``.
+
+    Blank/absent clears the slug — a task's stable identifier is optional,
+    not every task needs one. A non-blank value must match ``_SLUG_RE``;
+    whoever calls this (``TaskStore`` for the uniqueness half, below) still
+    has to check it isn't already owned by another task.
+    """
+    slug = str(raw or "").strip()
+    if not slug:
+        return None, None
+    if not _SLUG_RE.match(slug):
+        return None, (
+            f"slug {slug!r} must start with a lowercase letter and contain "
+            "only lowercase letters, digits and hyphens (2-41 chars total)"
+        )
+    return slug, None
 
 
 def validate_schedules(schedules) -> str | None:
@@ -71,6 +97,10 @@ def normalize_create(data: dict) -> tuple[dict | None, str | None]:
     if err:
         return None, err
 
+    slug, err = normalize_slug(data.get("slug"))
+    if err:
+        return None, err
+
     return {
         "name": name,
         "type": task_type,
@@ -82,6 +112,7 @@ def normalize_create(data: dict) -> tuple[dict | None, str | None]:
         "enabled": bool(data.get("enabled", True)),
         "agent_slug": agent_slug,
         "reuse_session": bool(data.get("reuse_session", False)),
+        "slug": slug,
     }, None
 
 
@@ -115,6 +146,10 @@ def validate_patch(existing: dict, patch: dict) -> str | None:
     """
     if "schedules" in patch:
         err = validate_schedules(patch["schedules"])
+        if err:
+            return err
+    if "slug" in patch:
+        _, err = normalize_slug(patch["slug"])
         if err:
             return err
     if not (any(f in patch for f in _DISPATCH_FIELDS) or _arms_the_task(existing, patch)):

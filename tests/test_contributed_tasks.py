@@ -77,6 +77,25 @@ def test_blank_agent_slug_is_normalised_to_none(plugin):
     assert plugin.store.created[0]["agent_slug"] is None
 
 
+def test_a_contributed_task_carries_its_declared_slug(plugin):
+    """An app can declare a stable task slug (contributes.tasks[].slug)
+    through this same provider path — it reaches TaskStore.create
+    unchanged, same as agent_slug above."""
+    plugin.register_contributed_task("indexer", {
+        "name": "Indexer — nightly rebuild",
+        "type": "agentic_output",
+        "command": "indexer-cli rebuild --quiet",
+        "slug": "indexer-nightly-rebuild",
+    })
+    assert plugin.store.created[0]["slug"] == "indexer-nightly-rebuild"
+
+
+def test_a_contributed_task_without_a_slug_gets_none(plugin):
+    plugin.register_contributed_task("x", {"name": "T", "type": "agentic_output",
+                                           "command": "echo"})
+    assert plugin.store.created[0]["slug"] is None
+
+
 def test_an_existing_task_of_the_same_name_is_left_untouched(plugin):
     plugin.store = FakeStore(existing=[{"name": "System Analyst — daily audit",
                                         "enabled": True, "agent_slug": "mine"}])

@@ -35,6 +35,12 @@ class FakeStore:
     def get(self, task_id):
         return self.tasks.get(task_id)
 
+    def get_by_slug(self, slug):
+        for t in self.tasks.values():
+            if t.get("slug") == slug and not t.get("hidden"):
+                return t
+        return None
+
     def create(self, **kwargs):
         self.created.append(kwargs)
         row = {"id": "task-new", "runs": [], **kwargs}
@@ -289,7 +295,7 @@ def test_missing_task_is_an_error_not_a_crash(store, manager):
 def test_task_id_is_required(store, manager):
     resp = call(store, manager, "get_task", {})
     assert resp["result"]["isError"] is True
-    assert "task_id is required" in text_of(resp)
+    assert "task_id or slug is required" in text_of(resp)
 
 
 def test_open_task_returns_the_last_run_not_a_scrollback(store, manager):
@@ -335,7 +341,108 @@ def test_normalize_create_matches_what_the_rest_route_used_to_build():
     assert kwargs == {"name": "T", "type": "terminal", "cli_type": "claude",
                       "prompt": "", "command": None, "notify_exit_codes": None,
                       "schedules": [], "enabled": True, "agent_slug": None,
-                      "reuse_session": False}
+                      "reuse_session": False, "slug": None}
+
+
+# ── task slugs ──────────────────────────────────────────────────────────────
+
+def test_normalize_create_carries_a_valid_slug_through():
+    kwargs, err = validation.normalize_create({"name": "T", "slug": "nightly-sync"})
+    assert err is None
+    assert kwargs["slug"] == "nightly-sync"
+
+
+def test_normalize_create_rejects_a_malformed_slug():
+    _, err = validation.normalize_create({"name": "T", "slug": "Not Valid!"})
+    assert err is not None
+    assert "slug" in err
+
+
+def test_normalize_create_blank_slug_is_none_not_empty_string():
+    kwargs, err = validation.normalize_create({"name": "T", "slug": "   "})
+    assert err is None
+    assert kwargs["slug"] is None
+
+
+@pytest.mark.parametrize("bad", ["Uppercase", "1starts-with-digit", "has space", "h", "-leading-hyphen"])
+def test_normalize_slug_rejects_bad_shapes(bad):
+    slug, err = validation.normalize_slug(bad)
+    assert slug is None
+    assert err is not None
+
+
+@pytest.mark.parametrize("good", ["nightly-sync", "ab", "sync2", "a-b-c-1-2-3"])
+def test_normalize_slug_accepts_good_shapes(good):
+    slug, err = validation.normalize_slug(good)
+    assert slug == good
+    assert err is None
+
+
+def test_normalize_slug_blank_or_absent_clears(store=None):
+    assert validation.normalize_slug(None) == (None, None)
+    assert validation.normalize_slug("") == (None, None)
+    assert validation.normalize_slug("   ") == (None, None)
+
+
+def test_create_task_with_a_valid_slug_is_written(store, manager):
+    resp = call(store, manager, "create_task", {"name": "Nightly", "slug": "nightly-sync"})
+    assert resp["result"]["isError"] is False
+    assert store.created[0]["slug"] == "nightly-sync"
+
+
+def test_create_task_refuses_a_malformed_slug(store, manager):
+    resp = call(store, manager, "create_task", {"name": "T", "slug": "Not Valid"})
+    assert resp["result"]["isError"] is True
+    assert "slug" in text_of(resp)
+    assert store.created == []
+
+
+def test_get_task_by_slug_resolves_to_the_right_task(store, manager):
+    store.tasks["task-abc"]["slug"] = "nightly-digest"
+    resp = call(store, manager, "get_task", {"slug": "nightly-digest"})
+    assert resp["result"]["isError"] is False
+    assert "task-abc" in text_of(resp)
+
+
+def test_run_task_by_slug(store, manager):
+    store.tasks["task-abc"]["slug"] = "nightly-digest"
+    resp = call(store, manager, "run_task", {"slug": "nightly-digest"})
+    assert resp["result"]["isError"] is False
+    assert manager.started == ["task-abc"]
+
+
+def test_delete_task_by_slug(store, manager):
+    store.tasks["task-abc"]["slug"] = "nightly-digest"
+    resp = call(store, manager, "delete_task", {"slug": "nightly-digest"})
+    assert resp["result"]["isError"] is False
+    assert store.deleted == ["task-abc"]
+
+
+def test_unknown_slug_is_an_error_not_a_crash(store, manager):
+    resp = call(store, manager, "get_task", {"slug": "nope-does-not-exist"})
+    assert resp["result"]["isError"] is True
+    assert "slug" in text_of(resp)
+
+
+def test_task_id_wins_over_slug_when_both_are_given(store, manager):
+    """update_task's double-duty: once task_id identifies the task, `slug`
+    in the same call is a value to SET, not an alternate identifier — so
+    passing both must never be treated as ambiguous."""
+    store.tasks["task-abc"]["slug"] = "old-slug"
+    resp = call(store, manager, "update_task",
+                {"task_id": "task-abc", "slug": "new-slug"})
+    assert resp["result"]["isError"] is False
+    assert store.updated == [("task-abc", {"slug": "new-slug"})]
+
+
+def test_update_task_identified_by_slug_can_change_other_fields(store, manager):
+    store.tasks["task-abc"]["slug"] = "nightly-digest"
+    resp = call(store, manager, "update_task",
+                {"slug": "nightly-digest", "name": "renamed"})
+    assert resp["result"]["isError"] is False
+    task_id, patch = store.updated[0]
+    assert task_id == "task-abc"
+    assert patch["name"] == "renamed"
 
 
 def test_cli_type_is_ignored_for_non_terminal_types():
