@@ -81,6 +81,11 @@ they can't disagree:
   `{{params.KEY|default}}` supplies an inline fallback — useful because a
   cron-fired run never gets `params` at all, and a placeholder with no match
   and no default **fails the run**, on purpose, rather than rendering blank.
+  When substituting into `agentic_output`'s `command`, every value is
+  `shlex.quote`d first — a `params` value is caller-supplied, and splicing
+  it unescaped into a string later run with `shell=True` is OS command
+  injection (CWE-78). Substitution into a `prompt` (which goes to an LLM
+  agent or a terminal session, never a shell) is never quoted.
 * **`env`** — `{"KEY": "value"}`, keys `^[A-Z][A-Z0-9_]*$`. Injected into the
   **subprocess only**, for `agentic_output`'s `command` — layered on top of
   this process's own environment, not replacing it. Refused outright for

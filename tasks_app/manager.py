@@ -273,7 +273,13 @@ class TaskManager:
             return
 
         params = run.get("params") or {}
-        command, err = templating.render(raw_command, params)
+        # shell_quote=True: this command is about to run via
+        # subprocess.run(..., shell=True) — a param value is caller-supplied
+        # and MUST be shell-escaped before splicing it in, or any caller of
+        # run_task can break out of the command via `;`, `|`, `$()`, etc.
+        # (CWE-78). The prompt below goes to an LLM agent, not a shell —
+        # left unquoted on purpose, see templating.render's own docstring.
+        command, err = templating.render(raw_command, params, shell_quote=True)
         if err:
             run["status"] = "error"
             run["error"] = f"command: {err}"

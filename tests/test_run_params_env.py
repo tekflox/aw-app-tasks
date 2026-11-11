@@ -70,6 +70,72 @@ def test_render_reports_every_missing_placeholder_once():
     assert "A" in err and "B" in err
 
 
+def test_render_stringifies_bool_params_as_lowercase_not_python_repr():
+    """Regression: str(True) is 'True', which reads as a literal nowhere a
+    param is actually consumed (a shell comparison, a JSON-ish prompt)."""
+    text, err = templating.render(
+        "if [ {{params.FLAG}} = true ]; then echo yes; fi", {"FLAG": True})
+    assert err is None
+    assert text == "if [ true = true ]; then echo yes; fi"
+
+    text, err = templating.render("{{params.FLAG}}", {"FLAG": False})
+    assert err is None
+    assert text == "false"
+
+
+# ── templating.render(shell_quote=True) — CWE-78 regression ────────────────
+
+
+def test_render_shell_quote_escapes_a_command_injection_payload():
+    """A params value is caller-supplied; splicing it unescaped into a
+    command later run with shell=True is OS command injection (CWE-78)."""
+    text, err = templating.render(
+        "echo {{params.MSG}}", {"MSG": "hi; rm -rf /tmp/pwned"}, shell_quote=True)
+    assert err is None
+    # shlex.quote wraps the whole payload in single quotes, so the shell
+    # sees one literal argument — ';' never becomes a command separator.
+    assert text == "echo 'hi; rm -rf /tmp/pwned'"
+
+
+@pytest.mark.parametrize("payload", [
+    "$(whoami)", "`whoami`", "a && touch /tmp/pwned", "a | cat /etc/passwd",
+    "a; echo pwned", "$HOME", "a > /tmp/out",
+])
+def test_render_shell_quote_neutralizes_every_shell_metacharacter_payload(payload):
+    """Each payload, once quoted and actually executed via shell=True, must
+    come back as the literal echoed string — never as a second command's
+    side effect (no $HOME expansion, no file touched, no pipe honored)."""
+    text, err = templating.render("echo {{params.X}}", {"X": payload}, shell_quote=True)
+    assert err is None
+    exit_code, output = agentic_output.run_command(text)
+    assert exit_code == 0
+    assert output.strip() == payload
+
+
+def test_render_shell_quote_is_a_noop_for_an_already_safe_value():
+    text, err = templating.render("echo {{params.MSG}}", {"MSG": "hi"}, shell_quote=True)
+    assert err is None
+    assert text == "echo hi"
+
+
+def test_render_shell_quote_also_quotes_the_inline_default():
+    text, err = templating.render(
+        "echo {{params.MSG|safe default}}", {}, shell_quote=True)
+    assert err is None
+    assert text == "echo 'safe default'"
+
+
+def test_run_command_with_a_quoted_injection_payload_does_not_execute_it(tmp_path):
+    marker = tmp_path / "pwned"
+    text, err = templating.render(
+        "echo hi; touch {{params.MARKER}}", {"MARKER": f"{marker}; echo oops"},
+        shell_quote=True)
+    assert err is None
+    exit_code, output = agentic_output.run_command(text)
+    assert exit_code == 0
+    assert not marker.exists(), "the quoted payload must not execute as a second command"
+
+
 # ── validation.validate_params ──────────────────────────────────────────────
 
 
@@ -294,6 +360,29 @@ def test_agentic_output_substitutes_params_in_command_and_env_in_subprocess():
     assert seen_calls[0]["env"]["CALLBACK_URL"] == "https://cb.example"
     # exit 0 is not notable for notify_exit_codes="1" — no agent dispatch needed
     assert run["status"] == "ok"
+
+
+def test_agentic_output_end_to_end_neutralizes_a_command_injection_param(tmp_path):
+    """Regression for the CRITICAL finding (CWE-78) from the automated code
+    review on this PR: a caller-supplied params value used to splice
+    unescaped into a shell=True command. Runs the REAL (unmocked)
+    agentic_output.run_command — not a fake — so this proves the shell
+    never actually executes the injected command, not just that the
+    rendered string looks right."""
+    marker = tmp_path / "pwned"
+    task = {"id": "t1", "type": "agentic_output",
+            "command": "echo {{params.MSG}}",
+            "agent_slug": "some-agent", "notify_exit_codes": "nonzero",
+            "prompt": "x", "last_notified_exit_code": None}
+    run = {"status": None, "error": None, "exit_code": None, "notified": None,
+           "output": None, "session_id": None,
+           "params": {"MSG": f"hi; touch {marker}"}, "env": {}}
+
+    mgr = TaskManager(FakeCtx(), FakeStore())
+    run_coro(mgr._run_agentic_output(task, run))
+
+    assert run["exit_code"] == 0
+    assert not marker.exists(), "the injected `touch` must never actually run"
 
 
 def test_agentic_output_bad_command_template_never_runs_the_subprocess():
