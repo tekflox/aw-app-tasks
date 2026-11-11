@@ -72,17 +72,26 @@ def truncate(text: str, limit: int = _MAX_OUTPUT_CHARS) -> str:
 
 
 def run_command(command: str, cwd: str | None = None,
-                timeout_s: int | None = None) -> tuple[int, str]:
+                timeout_s: int | None = None,
+                env: dict[str, str] | None = None) -> tuple[int, str]:
     """Run ``command`` via the shell, returning ``(exit_code, combined_output)``.
 
     stdout and stderr are merged. A timeout is reported as exit code 124
     (the conventional ``timeout(1)`` code) with a note appended.
+
+    ``env``, when given, is layered on top of this process's own environment
+    rather than replacing it — a task's command still needs PATH etc. to run
+    at all; see ``validation.py``'s ``validate_env`` for the denylist that
+    keeps a caller from overriding those via this argument in the first
+    place.
     """
+    import os
     import subprocess
 
+    merged_env = {**os.environ, **env} if env else None
     try:
         proc = subprocess.run(
-            command, shell=True, cwd=cwd,
+            command, shell=True, cwd=cwd, env=merged_env,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, timeout=timeout_s,
         )

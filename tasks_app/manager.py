@@ -44,8 +44,9 @@ import asyncio
 import logging
 import os
 import time
+from functools import partial
 
-from . import agentic_output, agents_platform_client, identity_token, terminal_client
+from . import agentic_output, agents_platform_client, identity_token, templating, terminal_client
 from .store import TaskStore
 from .updates import TaskUpdates
 
@@ -95,7 +96,8 @@ class TaskManager:
             logger.warning("Task %s: could not broadcast the %s update",
                            task_id, action, exc_info=True)
 
-    def _new_run(self, trigger: str) -> dict:
+    def _new_run(self, trigger: str, *, params: dict | None = None,
+                 env: dict | None = None) -> dict:
         return {
             "id": self.store.next_run_id(),
             "started_at": _now(),
@@ -106,9 +108,14 @@ class TaskManager:
             "notified": None,
             "output": None,
             "error": None,
+            # Recorded as given (see validation.py) so a run is reproducible
+            # from its own row — not a secrets channel, see the same module.
+            "params": params or {},
+            "env": env or {},
         }
 
-    async def start_task(self, task_id: str, *, trigger: str = "manual") -> dict:
+    async def start_task(self, task_id: str, *, trigger: str = "manual",
+                         params: dict | None = None, env: dict | None = None) -> dict:
         """Kick a run off and return as soon as it is *started*, with the run
         row already persisted as ``status="running"``.
 
@@ -127,7 +134,7 @@ class TaskManager:
         if not task:
             raise KeyError(task_id)
 
-        run = self._new_run(trigger)
+        run = self._new_run(trigger, params=params, env=env)
         self._firing.add(task_id)
         self.store.insert_run(task_id, run)
         # Not needed for the browser that clicked Run — it reloads on its own
@@ -141,7 +148,8 @@ class TaskManager:
         bg.add_done_callback(self._background.discard)
         return run
 
-    async def run_task(self, task_id: str, *, trigger: str = "manual") -> dict:
+    async def run_task(self, task_id: str, *, trigger: str = "manual",
+                       params: dict | None = None, env: dict | None = None) -> dict:
         """Run a task to completion and return the finished run. Blocks for
         the full duration — prefer :meth:`start_task` for anything reached
         over HTTP or driven by the scheduler."""
@@ -151,7 +159,7 @@ class TaskManager:
 
         self._firing.add(task_id)
         try:
-            run = self._new_run(trigger)
+            run = self._new_run(trigger, params=params, env=env)
             await self._dispatch(task, run)
             self.store.record_run(task_id, run)
             await self._broadcast_run(task_id, "finish", run)
@@ -213,6 +221,11 @@ class TaskManager:
         )
 
         prompt = (task.get("prompt") or "").rstrip()
+        prompt, err = templating.render(prompt, run.get("params") or {})
+        if err:
+            run["status"] = "error"
+            run["error"] = err
+            return
         session_name = f"Task: {task['name']}"
         # cli_type "terminal" means a plain login shell, NOT a command called
         # "terminal" — core would run `bash -lc "cd …; terminal"` and the PTY
@@ -248,8 +261,8 @@ class TaskManager:
         replies into the user's Telegram chat) instead of only the
         workspace SPA's in-app notification tray.
         """
-        command = (task.get("command") or "").strip()
-        if not command:
+        raw_command = (task.get("command") or "").strip()
+        if not raw_command:
             run["status"] = "error"
             run["error"] = "agentic_output task has no command configured"
             return
@@ -259,10 +272,28 @@ class TaskManager:
             run["error"] = "agentic_output task has no agent_slug configured"
             return
 
+        params = run.get("params") or {}
+        # shell_quote=True: this command is about to run via
+        # subprocess.run(..., shell=True) — a param value is caller-supplied
+        # and MUST be shell-escaped before splicing it in, or any caller of
+        # run_task can break out of the command via `;`, `|`, `$()`, etc.
+        # (CWE-78). The prompt below goes to an LLM agent, not a shell —
+        # left unquoted on purpose, see templating.render's own docstring.
+        command, err = templating.render(raw_command, params, shell_quote=True)
+        if err:
+            run["status"] = "error"
+            run["error"] = f"command: {err}"
+            return
+        base_prompt, err = templating.render((task.get("prompt") or "").strip(), params)
+        if err:
+            run["status"] = "error"
+            run["error"] = f"prompt: {err}"
+            return
+
         notify_codes = agentic_output.parse_notify_codes(task.get("notify_exit_codes"))
         loop = asyncio.get_event_loop()
         exit_code, output = await loop.run_in_executor(
-            None, agentic_output.run_command, command,
+            None, partial(agentic_output.run_command, command, env=run.get("env") or None),
         )
         run["exit_code"] = exit_code
 
@@ -293,7 +324,6 @@ class TaskManager:
             )
             return
 
-        base_prompt = (task.get("prompt") or "").strip()
         combined_prompt = (
             f"{base_prompt}\n\nSaída do comando (exit code {exit_code}):\n"
             f"{agentic_output.truncate(output)}"
@@ -314,6 +344,12 @@ class TaskManager:
         if not prompt:
             run["status"] = "error"
             run["error"] = "agent_prompt task has no prompt configured"
+            return
+
+        prompt, err = templating.render(prompt, run.get("params") or {})
+        if err:
+            run["status"] = "error"
+            run["error"] = err
             return
 
         await self._dispatch_agent(task, run, prompt=prompt)

@@ -86,8 +86,18 @@ _RUNS_DDL = """
     exit_code INTEGER,
     notified BOOLEAN,
     output TEXT,
-    error TEXT
+    error TEXT,
+    params TEXT,
+    env TEXT
 """
+
+# Same reasoning as _TASKS_MIGRATIONS: CREATE TABLE IF NOT EXISTS is a no-op
+# against an already-existing table, so a workspace that installed this app
+# before params/env passthrough existed needs these added explicitly.
+_RUNS_MIGRATIONS = (
+    "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS params TEXT",
+    "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS env TEXT",
+)
 
 # The editable subset PUT /tasks/{id} accepts.
 _PATCHABLE_FIELDS = (
@@ -124,6 +134,8 @@ class TaskStore:
         ctx.db.create(_RUNS_TABLE, _RUNS_DDL)
         for stmt in _TASKS_MIGRATIONS:
             self._ctx.db.execute(_TASKS_TABLE, stmt)
+        for stmt in _RUNS_MIGRATIONS:
+            self._ctx.db.execute(_RUNS_TABLE, stmt)
 
     # ------------------------------------------------------------------
     # Task CRUD
@@ -314,10 +326,10 @@ class TaskStore:
             """
             INSERT INTO {table}
                 (id, task_id, started_at, trigger, status, session_id,
-                 exit_code, notified, output, error)
+                 exit_code, notified, output, error, params, env)
             VALUES
                 (:id, :task_id, :started_at, :trigger, :status, :session_id,
-                 :exit_code, :notified, :output, :error)
+                 :exit_code, :notified, :output, :error, :params, :env)
             """,
             {
                 "id": run["id"], "task_id": task_id, "started_at": run.get("started_at"),
@@ -325,6 +337,8 @@ class TaskStore:
                 "session_id": run.get("session_id"), "exit_code": run.get("exit_code"),
                 "notified": run.get("notified"), "output": run.get("output"),
                 "error": run.get("error"),
+                "params": json.dumps(run.get("params") or {}),
+                "env": json.dumps(run.get("env") or {}),
             },
         )
         self._ctx.db.execute(
@@ -437,4 +451,6 @@ class TaskStore:
             "trigger": m["trigger"], "status": m["status"], "session_id": m["session_id"],
             "exit_code": m["exit_code"], "notified": m["notified"],
             "output": m["output"], "error": m["error"],
+            "params": json.loads(m["params"] or "{}"),
+            "env": json.loads(m["env"] or "{}"),
         }

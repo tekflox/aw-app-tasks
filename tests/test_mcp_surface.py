@@ -64,13 +64,16 @@ class FakeManager:
     def __init__(self, store):
         self.store = store
         self.started: list[str] = []
+        self.started_with: list[dict] = []
 
-    async def start_task(self, task_id, *, trigger="manual"):
+    async def start_task(self, task_id, *, trigger="manual", params=None, env=None):
         if task_id not in self.store.tasks:
             raise KeyError(task_id)
         self.started.append(task_id)
+        self.started_with.append({"params": params or {}, "env": env or {}})
         run = {"id": "run-1", "task_id": task_id, "status": "running",
-               "trigger": trigger, "started_at": 1000.0}
+               "trigger": trigger, "started_at": 1000.0,
+               "params": params or {}, "env": env or {}}
         self.store.runs.insert(0, run)
         return run
 

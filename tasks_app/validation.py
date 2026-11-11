@@ -54,6 +54,120 @@ def normalize_slug(raw) -> tuple[str | None, str | None]:
     return slug, None
 
 
+# ----------------------------------------------------------------------
+# run-time params + env passthrough (POST .../run, run_task MCP tool)
+#
+# Shared by both front doors for the same reason agent_slug validation is:
+# the HTTP route and the MCP tool call TaskManager directly, so whichever one
+# is laxer becomes the real contract. Bounded count/size so a caller can't
+# blow up a run row or a shell command line; params values stay typed (they
+# get stringified only at {{params.KEY}} substitution time), env values are
+# coerced to str because an environment variable is always one.
+# ----------------------------------------------------------------------
+
+MAX_PARAMS = 20
+MAX_ENV_VARS = 20
+_MAX_KEY_LEN = 64
+_MAX_VALUE_LEN = 4096
+
+_PARAM_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+_ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+# Tasks already run arbitrary commands under the caller's own auth, so taking
+# an env var from the caller is not a new privilege — but silently letting a
+# run mutate an EXISTING task's runtime via one of these would be, so they
+# stay refused regardless of caller intent.
+_ENV_DENYLIST_EXACT = frozenset({"PATH", "HOME", "SHELL"})
+_ENV_DENYLIST_PREFIXES = ("LD_", "PYTHON", "AW_")
+
+
+def _env_is_denied(key: str) -> bool:
+    return key in _ENV_DENYLIST_EXACT or key.startswith(_ENV_DENYLIST_PREFIXES)
+
+
+def validate_params(params) -> tuple[dict | None, str | None]:
+    """``(normalized params or {}, None)`` or ``(None, error)``.
+
+    Keys ``^[A-Za-z][A-Za-z0-9_]*$``, values str|int|float|bool — these are
+    substituted as text into a prompt/command, so there is no reason to carry
+    a nested structure through. Not a secrets channel: params are recorded
+    verbatim on the run row (see store.py's runs table) so a run is
+    reproducible from its own history.
+    """
+    if params is None:
+        return {}, None
+    if not isinstance(params, dict):
+        return None, "params must be an object"
+    if len(params) > MAX_PARAMS:
+        return None, f"params: at most {MAX_PARAMS} entries, got {len(params)}"
+    out: dict = {}
+    for key, value in params.items():
+        if not isinstance(key, str) or not _PARAM_KEY_RE.match(key):
+            return None, f"params key {key!r} must match {_PARAM_KEY_RE.pattern}"
+        if len(key) > _MAX_KEY_LEN:
+            return None, f"params key {key!r} exceeds {_MAX_KEY_LEN} chars"
+        if not isinstance(value, (str, int, float, bool)):
+            return None, f"params[{key!r}] must be a string, number or boolean"
+        if isinstance(value, str) and len(value) > _MAX_VALUE_LEN:
+            return None, f"params[{key!r}] exceeds {_MAX_VALUE_LEN} chars"
+        out[key] = value
+    return out, None
+
+
+def validate_env(env, *, task_type: str) -> tuple[dict | None, str | None]:
+    """``(normalized env or {}, None)`` or ``(None, error)``.
+
+    Keys ``^[A-Z][A-Z0-9_]*$``, refused on the reserved denylist (PATH, HOME,
+    SHELL, LD_*, PYTHON*, AW_*). A ``terminal`` task's reused PTY has its
+    environment fixed at session creation — env is refused outright for that
+    type rather than silently doing nothing.
+    """
+    if env is None:
+        return {}, None
+    if not isinstance(env, dict):
+        return None, "env must be an object"
+    if task_type == "terminal":
+        if env:
+            return None, (
+                "env is not supported for 'terminal' tasks — a reused CLI "
+                "session's environment is fixed when the session is first "
+                "created and cannot be changed per run. Use params instead."
+            )
+        return {}, None
+    if len(env) > MAX_ENV_VARS:
+        return None, f"env: at most {MAX_ENV_VARS} entries, got {len(env)}"
+    out: dict = {}
+    for key, value in env.items():
+        if not isinstance(key, str) or not _ENV_KEY_RE.match(key):
+            return None, f"env key {key!r} must match {_ENV_KEY_RE.pattern}"
+        if len(key) > _MAX_KEY_LEN:
+            return None, f"env key {key!r} exceeds {_MAX_KEY_LEN} chars"
+        if _env_is_denied(key):
+            return None, f"env key {key!r} is reserved and cannot be overridden"
+        if not isinstance(value, (str, int, float, bool)):
+            return None, f"env[{key!r}] must be a string, number or boolean"
+        value = value if isinstance(value, str) else str(value)
+        if len(value) > _MAX_VALUE_LEN:
+            return None, f"env[{key!r}] exceeds {_MAX_VALUE_LEN} chars"
+        out[key] = value
+    return out, None
+
+
+def validate_run_args(data: dict, *, task_type: str) -> tuple[dict, str | None]:
+    """Normalize+validate an optional ``{"params": {...}, "env": {...}}``
+    run body — shared by both run routes and the MCP ``run_task`` tool.
+
+    Returns ``({"params": {...}, "env": {...}}, None)`` or ``({}, error)``.
+    """
+    params, err = validate_params((data or {}).get("params"))
+    if err:
+        return {}, err
+    env, err = validate_env((data or {}).get("env"), task_type=task_type)
+    if err:
+        return {}, err
+    return {"params": params, "env": env}, None
+
+
 def validate_schedules(schedules) -> str | None:
     """None if every entry is a schedule the scheduler can compute a next
     fire from, else the first problem found."""
