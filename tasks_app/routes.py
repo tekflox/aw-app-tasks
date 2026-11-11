@@ -17,6 +17,22 @@ Decision 2/6) but otherwise match 1:1:
                                        POST   /mcp   (MCP over Streamable HTTP)
                                        WS     /ws/updates (live run updates)
 
+Two more routes with no monolith counterpart: a task's ``id`` is an opaque
+``task-<12 hex>``, which is fine for a caller that stores it but useless for
+one that wants to hard-code which task it means (a doc, a script, another
+app's ``contributes.tasks`` declaration). ``slug`` is the stable,
+app/user-defined alternative — optional, unique among non-hidden tasks, set
+via the ordinary create/update body (``validation.normalize_slug``) — and
+these two routes are how a caller addresses a task by it instead of by id:
+
+    GET    /tasks/by-slug/{slug}
+    POST   /tasks/by-slug/{slug}/run
+
+Every id-based route above keeps working unchanged; a task without a slug is
+simply unreachable through these two. See ``store.py``'s ``get_by_slug``/
+``SlugConflict`` and the MCP surface's ``slug`` argument (``mcp/
+http_handler.py``) for the other two front doors onto the same column.
+
 ``/ws/updates`` is this app's own WebSocket, declared here with a relative
 path exactly like every HTTP route above — the runtime mounts the whole
 sub-app at ``/api/apps/tasks``, so it is reachable at
@@ -38,7 +54,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from . import agents_platform_client, scheduling, validation
 from .manager import TaskManager
-from .store import TaskStore
+from .store import SlugConflict, TaskStore
 from .updates import TaskUpdates, init_frame
 from .view import build_view_html
 
@@ -69,7 +85,28 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager,
         kwargs, err = validation.normalize_create(data)
         if err:
             raise HTTPException(status_code=400, detail=err)
-        return store.create(**kwargs)
+        try:
+            return store.create(**kwargs)
+        except SlugConflict as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    # Declared ahead of /tasks/{task_id}: "by-slug" never collides with an
+    # opaque task_id (always "task-<12 hex>"), but routes still read clearest
+    # with the more specific path first.
+    @api.get("/tasks/by-slug/{slug}")
+    async def get_task_by_slug(slug: str):
+        t = store.get_by_slug(slug)
+        if not t:
+            raise HTTPException(status_code=404, detail="Not found")
+        return t
+
+    @api.post("/tasks/by-slug/{slug}/run")
+    async def run_task_by_slug(slug: str):
+        t = store.get_by_slug(slug)
+        if not t:
+            raise HTTPException(status_code=404, detail="Not found")
+        run = await manager.start_task(t["id"], trigger="manual")
+        return {"success": True, "run": run}
 
     @api.get("/tasks/{task_id}")
     async def get_task(task_id: str):
@@ -86,7 +123,10 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager,
         err = validation.validate_patch(existing, data)
         if err:
             raise HTTPException(status_code=400, detail=err)
-        return store.update(task_id, data)
+        try:
+            return store.update(task_id, data)
+        except SlugConflict as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     @api.delete("/tasks/{task_id}")
     async def delete_task(task_id: str):

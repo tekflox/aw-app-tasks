@@ -76,6 +76,24 @@ _SLUG_DOC = (
     "never dispatches. See list_clis."
 )
 
+_TASK_SLUG_DOC = (
+    "Stable, app/user-defined identifier for this task — lowercase letters, "
+    "digits and hyphens, starting with a letter. Optional; a task works "
+    "fine without one. Must be unique among tasks that aren't deleted."
+)
+
+_IDENTIFIER_DOC = (
+    "Alternative to task_id — the task's slug (see create_task's slug "
+    "field), if it has one. task_id always works and takes precedence when "
+    "both are given; pass slug when you don't have the id on hand."
+)
+
+# Tools that need to be pointed at exactly one existing task. Each accepts
+# either task_id or slug — task_id wins if both are present, so update_task
+# can always use slug purely as a value to set without it being mistaken
+# for the lookup key.
+_NEEDS_TASK_ID = ("get_task", "update_task", "delete_task", "run_task", "open_task")
+
 TOOLS_SCHEMA: list[dict] = [
     {
         "name": "list_tasks",
@@ -91,8 +109,10 @@ TOOLS_SCHEMA: list[dict] = [
         "description": "One task in full, including its recent runs[].",
         "inputSchema": {
             "type": "object",
-            "properties": {"task_id": {"type": "string", "description": "Task id (task-…)."}},
-            "required": ["task_id"],
+            "properties": {
+                "task_id": {"type": "string", "description": "Task id (task-…). Required unless slug is given."},
+                "slug": {"type": "string", "description": _IDENTIFIER_DOC},
+            },
         },
     },
     {
@@ -116,6 +136,7 @@ TOOLS_SCHEMA: list[dict] = [
                 "schedules": {"type": "array", "items": {"type": "object"}, "description": SCHEDULE_DOC},
                 "enabled": {"type": "boolean", "description": "Default true. A disabled task never fires on schedule but can still be run manually."},
                 "reuse_session": {"type": "boolean", "description": "Agent types: resume the same Agents Platform conversation each run instead of starting fresh."},
+                "slug": {"type": "string", "description": _TASK_SLUG_DOC},
             },
             "required": ["name"],
         },
@@ -135,7 +156,8 @@ TOOLS_SCHEMA: list[dict] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "task_id": {"type": "string", "description": "Task id (task-…)."},
+                "task_id": {"type": "string", "description": "Task id (task-…). Required unless slug is given."},
+                "slug": {"type": "string", "description": _IDENTIFIER_DOC + " Also usable as a plain patch value — see create_task's slug field — once task_id is given to identify the task."},
                 "name": {"type": "string"},
                 "type": {"type": "string", "enum": list(validation.KNOWN_TYPES), "description": _TYPE_DOC},
                 "prompt": {"type": "string"},
@@ -147,7 +169,6 @@ TOOLS_SCHEMA: list[dict] = [
                 "enabled": {"type": "boolean"},
                 "reuse_session": {"type": "boolean"},
             },
-            "required": ["task_id"],
         },
     },
     {
@@ -155,8 +176,10 @@ TOOLS_SCHEMA: list[dict] = [
         "description": "Delete a task (soft — hidden and disabled, so nothing it already ran is lost).",
         "inputSchema": {
             "type": "object",
-            "properties": {"task_id": {"type": "string", "description": "Task id (task-…)."}},
-            "required": ["task_id"],
+            "properties": {
+                "task_id": {"type": "string", "description": "Task id (task-…). Required unless slug is given."},
+                "slug": {"type": "string", "description": _IDENTIFIER_DOC},
+            },
         },
     },
     {
@@ -170,10 +193,10 @@ TOOLS_SCHEMA: list[dict] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "task_id": {"type": "string", "description": "Task id (task-…)."},
+                "task_id": {"type": "string", "description": "Task id (task-…). Required unless slug is given."},
+                "slug": {"type": "string", "description": _IDENTIFIER_DOC},
                 "wait_s": {"type": "integer", "description": f"Seconds to wait for the run to finish. Default 0 (return immediately), max {MAX_WAIT_S}."},
             },
-            "required": ["task_id"],
         },
     },
     {
@@ -188,10 +211,10 @@ TOOLS_SCHEMA: list[dict] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "task_id": {"type": "string", "description": "Task id (task-…)."},
+                "task_id": {"type": "string", "description": "Task id (task-…). Required unless slug is given."},
+                "slug": {"type": "string", "description": _IDENTIFIER_DOC},
                 "limit": {"type": "integer", "description": "How many recent runs to return, newest first. Default 1."},
             },
-            "required": ["task_id"],
         },
     },
     {
@@ -205,9 +228,6 @@ TOOLS_SCHEMA: list[dict] = [
         "inputSchema": {"type": "object", "properties": {}},
     },
 ]
-
-
-_NEEDS_TASK_ID = ("get_task", "update_task", "delete_task", "run_task", "open_task")
 
 
 def _ok(req_id, text: str) -> dict:
@@ -230,6 +250,7 @@ def _summarize_task(t: dict) -> dict:
     runs = t.get("runs") or []
     return {
         "id": t.get("id"),
+        "slug": t.get("slug"),
         "name": t.get("name"),
         "type": t.get("type"),
         "enabled": t.get("enabled"),
@@ -316,7 +337,18 @@ async def handle_request(request: dict, *, ctx, store, manager) -> dict | None:
     # "task_id is required", which reads as a bad call rather than a bad name.
     task_id = (args.get("task_id") or "").strip()
     if name in _NEEDS_TASK_ID and not task_id:
-        return _err(req_id, "task_id is required")
+        # task_id wins when both are given (see _NEEDS_TASK_ID's comment) —
+        # falling back to slug only when task_id is absent is what lets
+        # update_task use `slug` purely as a value to set once task_id has
+        # already identified the task.
+        slug = (args.get("slug") or "").strip()
+        if slug:
+            resolved = store.get_by_slug(slug)
+            if not resolved:
+                return _err(req_id, f"no task with slug {slug!r}")
+            task_id = resolved["id"]
+        if not task_id:
+            return _err(req_id, "task_id or slug is required")
 
     try:
         if name == "list_tasks":

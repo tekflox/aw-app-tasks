@@ -29,7 +29,7 @@ import json
 import time
 import uuid
 
-from . import scheduling
+from . import scheduling, validation
 
 _TASKS_TABLE = "app__tasks__tasks"
 _RUNS_TABLE = "app__tasks__runs"
@@ -54,7 +54,8 @@ _TASKS_DDL = """
     agent_slug TEXT,
     reuse_session BOOLEAN NOT NULL DEFAULT false,
     ap_session_id TEXT,
-    last_notified_exit_code INTEGER
+    last_notified_exit_code INTEGER,
+    slug TEXT
 """
 
 # Columns added after the table's first release — CREATE TABLE IF NOT
@@ -67,6 +68,12 @@ _TASKS_MIGRATIONS = (
     "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS reuse_session BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS ap_session_id TEXT",
     "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS last_notified_exit_code INTEGER",
+    "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS slug TEXT",
+    # Enforced only among rows still visible (hidden = soft-deleted) — a
+    # slug freed by a deletion must be reusable by a brand-new task, and a
+    # row's own slug must never block updating that same row.
+    "CREATE UNIQUE INDEX IF NOT EXISTS app__tasks__tasks_slug_key "
+    "ON {table} (slug) WHERE slug IS NOT NULL AND hidden = false",
 )
 
 _RUNS_DDL = """
@@ -85,12 +92,27 @@ _RUNS_DDL = """
 # The editable subset PUT /tasks/{id} accepts.
 _PATCHABLE_FIELDS = (
     "name", "type", "cli_type", "prompt", "command", "notify_exit_codes",
-    "schedules", "enabled", "agent_slug", "reuse_session",
+    "schedules", "enabled", "agent_slug", "reuse_session", "slug",
 )
 
 
 def _now() -> float:
     return time.time()
+
+
+class SlugConflict(ValueError):
+    """Raised by :meth:`TaskStore.create`/:meth:`TaskStore.update` when the
+    requested ``slug`` is already owned by another non-hidden task.
+
+    A ``ValueError`` so a caller that only guards against bad input (rather
+    than this specific condition) still treats it as one — the REST/MCP
+    front doors catch it by name to return a clean 400 instead of a 500.
+    """
+
+    def __init__(self, slug: str, existing_task_id: str):
+        self.slug = slug
+        self.existing_task_id = existing_task_id
+        super().__init__(f"slug {slug!r} is already used by task {existing_task_id!r}")
 
 
 class TaskStore:
@@ -122,11 +144,53 @@ class TaskStore:
             return None
         return self._to_dict(rows[0], with_runs=True)
 
+    def get_by_slug(self, slug: str) -> dict | None:
+        """The one non-hidden task carrying ``slug``, or ``None``.
+
+        Only non-hidden rows match — a soft-deleted task's old slug is free
+        for a new task to reuse (same rule :meth:`create`/:meth:`update`
+        enforce), so a hidden row must never shadow it here either.
+        """
+        slug = (slug or "").strip()
+        if not slug:
+            return None
+        rows = self._ctx.db.execute(
+            _TASKS_TABLE,
+            "SELECT * FROM {table} WHERE slug = :slug AND hidden = :hidden",
+            {"slug": slug, "hidden": False},
+        )
+        if not rows:
+            return None
+        return self._to_dict(rows[0], with_runs=True)
+
+    def _find_slug_owner(self, slug: str, exclude_id: str | None = None) -> str | None:
+        """The id of the non-hidden task already holding ``slug``, other
+        than ``exclude_id`` — so re-saving a task's own current slug is
+        never mistaken for a conflict with itself."""
+        rows = self._ctx.db.execute(
+            _TASKS_TABLE,
+            "SELECT id FROM {table} WHERE slug = :slug AND hidden = :hidden",
+            {"slug": slug, "hidden": False},
+        )
+        for r in rows:
+            rid = r._mapping["id"]
+            if rid != exclude_id:
+                return rid
+        return None
+
     def create(self, *, name: str, type: str = "terminal", cli_type: str = "terminal",
               prompt: str = "", command: str | None = None,
               notify_exit_codes: str | None = None,
               schedules: list[dict] | None = None, enabled: bool = True,
-              agent_slug: str | None = None, reuse_session: bool = False) -> dict:
+              agent_slug: str | None = None, reuse_session: bool = False,
+              slug: str | None = None) -> dict:
+        slug, err = validation.normalize_slug(slug)
+        if err:
+            raise ValueError(err)
+        if slug:
+            owner = self._find_slug_owner(slug)
+            if owner:
+                raise SlugConflict(slug, owner)
         task_id = f"task-{uuid.uuid4().hex[:12]}"
         now = _now()
         schedules = list(schedules or [])
@@ -138,12 +202,12 @@ class TaskStore:
                 (id, name, type, cli_type, prompt, command, notify_exit_codes,
                  schedules, enabled, session_id, hidden, created_at,
                  next_fire_at, last_run_at, last_run_status,
-                 agent_slug, reuse_session, ap_session_id)
+                 agent_slug, reuse_session, ap_session_id, slug)
             VALUES
                 (:id, :name, :type, :cli_type, :prompt, :command, :notify_exit_codes,
                  :schedules, :enabled, NULL, :hidden, :created_at,
                  :next_fire_at, NULL, NULL,
-                 :agent_slug, :reuse_session, NULL)
+                 :agent_slug, :reuse_session, NULL, :slug)
             """,
             {
                 "id": task_id, "name": name, "type": type, "cli_type": cli_type,
@@ -151,6 +215,7 @@ class TaskStore:
                 "schedules": json.dumps(schedules), "enabled": bool(enabled),
                 "hidden": False, "created_at": now, "next_fire_at": next_fire_at,
                 "agent_slug": agent_slug, "reuse_session": bool(reuse_session),
+                "slug": slug,
             },
         )
         return self.get(task_id)
@@ -162,6 +227,15 @@ class TaskStore:
         fields = {k: v for k, v in patch.items() if k in _PATCHABLE_FIELDS}
         if not fields:
             return existing
+        if "slug" in fields:
+            slug, err = validation.normalize_slug(fields["slug"])
+            if err:
+                raise ValueError(err)
+            if slug:
+                owner = self._find_slug_owner(slug, exclude_id=task_id)
+                if owner:
+                    raise SlugConflict(slug, owner)
+            fields["slug"] = slug
         merged = {**existing, **fields}
         if "schedules" in fields or "enabled" in fields:
             merged["next_fire_at"] = (
@@ -349,6 +423,7 @@ class TaskStore:
             "agent_slug": m["agent_slug"], "reuse_session": bool(m["reuse_session"]),
             "ap_session_id": m["ap_session_id"],
             "last_notified_exit_code": m["last_notified_exit_code"],
+            "slug": m["slug"],
         }
         if with_runs:
             d["runs"] = self.runs_for(m["id"])

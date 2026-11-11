@@ -170,6 +170,13 @@ class TasksAppPlugin:
             # whenever the type is agent_prompt.
             agent_slug=(str(spec.get("agent_slug") or "").strip() or None),
             reuse_session=bool(spec.get("reuse_session", False)),
+            # The app's own stable identifier for this task — see
+            # validation.normalize_slug for the format, store.SlugConflict
+            # for the uniqueness check. Either raising here fails only this
+            # one spec: the caller (aw-workspace's TasksRegistry._dispatch)
+            # already wraps this whole call per-spec, so a bad/duplicate
+            # slug from one app's declaration cannot block another's.
+            slug=(str(spec.get("slug") or "").strip() or None),
         )
         log.info("aw-app-tasks: seeded task %r contributed by %s", name, app_id)
         return True
