@@ -69,6 +69,38 @@ minutes and nothing in front of this workspace holds a request that long (the
 tunnel edge cuts at 30s). Pass `wait_s` (max 120) to be held for a short run,
 otherwise come back with `open_task`.
 
+### `run_task` params + env (per-run, generic — not tied to any one task)
+
+Both `run_task` and the REST `.../run` routes take optional `params`/`env`,
+shared validation on every door (`validation.py`'s `validate_run_args`) so
+they can't disagree:
+
+* **`params`** — `{"KEY": "value"}`, keys `^[A-Za-z][A-Za-z0-9_]*$`, values
+  string/number/boolean. Substituted via `{{params.KEY}}` into the task's
+  `prompt` (agent types) or `command` (`agentic_output`) for that run only.
+  `{{params.KEY|default}}` supplies an inline fallback — useful because a
+  cron-fired run never gets `params` at all, and a placeholder with no match
+  and no default **fails the run**, on purpose, rather than rendering blank.
+* **`env`** — `{"KEY": "value"}`, keys `^[A-Z][A-Z0-9_]*$`. Injected into the
+  **subprocess only**, for `agentic_output`'s `command` — layered on top of
+  this process's own environment, not replacing it. Refused outright for
+  `terminal` tasks (a reused CLI session's environment is fixed when the
+  session is first created — this is documented, not faked) and a no-op for
+  `agent_prompt` (nothing spawns a subprocess there). Reserved names are
+  refused regardless of task type: `PATH`, `HOME`, `SHELL`, `LD_*`,
+  `PYTHON*`, `AW_*` — tasks already run arbitrary commands under the
+  caller's own auth, so passthrough isn't a new privilege, but silently
+  letting a run override one of these would be.
+* **Neither is a secrets channel.** Both are recorded verbatim (keys and
+  values) on the run row so a run is reproducible from its own history — use
+  the secrets vault for anything sensitive, never `env`/`params`.
+
+```bash
+curl -sX POST "$BASE/api/apps/tasks/tasks/by-slug/kanban-sweep-check/run" \
+  -H 'content-type: application/json' \
+  -d '{"params": {"BOARD": "agents"}, "env": {"CALLBACK_URL": "https://..."}}'
+```
+
 ## Task shape
 
 ```jsonc
@@ -90,7 +122,8 @@ otherwise come back with `open_task`.
   "ap_session_id": "…",              // agent types, when reuse_session is on
   "runs": [{"id": "run-…", "started_at": …, "trigger": "manual"|"cron",
             "status": "ok"|"error", "exit_code": 0, "notified": false,
-            "session_id": "…", "output": "…", "error": null}]
+            "session_id": "…", "output": "…", "error": null,
+            "params": {}, "env": {}}]   // what this run was actually called with
 }
 ```
 
@@ -137,7 +170,8 @@ Every path below is relative to `/api/apps/tasks`.
 | `GET /tasks/{id}` | Fetch one task. |
 | `PUT /tasks/{id}` | Patch — only send the fields you want to change. |
 | `DELETE /tasks/{id}` | Soft-delete. |
-| `POST /tasks/{id}/run` | Fire now; returns as soon as the run has started. |
+| `POST /tasks/{id}/run` | Fire now; optional `{"params":{...},"env":{...}}` body — see above. Returns as soon as the run has started. |
+| `POST /tasks/by-slug/{slug}/run` | Same as above, addressed by slug. |
 | `GET /agents` | Agents Platform agent slugs (what `list_clis` wraps). |
 | `POST /validate-cron` | `{"cron": "…"}` → is it valid, and when does it next fire. |
 | `POST /preview-schedules` | `{"schedules": [...]}` → per-entry validity + next fire. |

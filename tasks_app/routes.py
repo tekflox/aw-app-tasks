@@ -101,11 +101,16 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager,
         return t
 
     @api.post("/tasks/by-slug/{slug}/run")
-    async def run_task_by_slug(slug: str):
+    async def run_task_by_slug(slug: str, data: dict = Body(default_factory=dict)):
         t = store.get_by_slug(slug)
         if not t:
             raise HTTPException(status_code=404, detail="Not found")
-        run = await manager.start_task(t["id"], trigger="manual")
+        # Shared with the MCP surface (mcp/http_handler.py) and the id-based
+        # /run route below — see validation.py's validate_run_args.
+        run_args, err = validation.validate_run_args(data, task_type=t.get("type") or "terminal")
+        if err:
+            raise HTTPException(status_code=400, detail=err)
+        run = await manager.start_task(t["id"], trigger="manual", **run_args)
         return {"success": True, "run": run}
 
     @api.get("/tasks/{task_id}")
@@ -136,12 +141,22 @@ def build_routes(ctx, store: TaskStore, manager: TaskManager,
         return {"success": True}
 
     @api.post("/tasks/{task_id}/run")
-    async def run_task(task_id: str):
+    async def run_task(task_id: str, data: dict = Body(default_factory=dict)):
         # Returns as soon as the run is *started*, with the run row already
         # persisted as status="running" — see TaskManager.start_task for why
         # awaiting the whole run here is not survivable over HTTP.
+        #
+        # Optional body: {"params": {...}, "env": {...}} — see
+        # validation.py's validate_run_args, shared with the other run
+        # routes and the MCP run_task tool so the front doors can't disagree.
+        t = store.get(task_id)
+        if not t:
+            raise HTTPException(status_code=404, detail="Not found")
+        run_args, err = validation.validate_run_args(data, task_type=t.get("type") or "terminal")
+        if err:
+            raise HTTPException(status_code=400, detail=err)
         try:
-            run = await manager.start_task(task_id, trigger="manual")
+            run = await manager.start_task(task_id, trigger="manual", **run_args)
         except KeyError:
             raise HTTPException(status_code=404, detail="Not found")
         return {"success": True, "run": run}

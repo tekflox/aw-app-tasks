@@ -76,6 +76,24 @@ _SLUG_DOC = (
     "never dispatches. See list_clis."
 )
 
+_PARAMS_DOC = (
+    "Optional. {{params.KEY}} (or {{params.KEY|default}}) substitution into "
+    "the task's prompt/command for this run only. Keys must match "
+    "^[A-Za-z][A-Za-z0-9_]*$; values are strings, numbers or booleans. Not a "
+    "secrets channel — recorded as-is on the run row, use the secrets vault "
+    "for anything sensitive. A placeholder with no matching param and no "
+    "inline default fails the run."
+)
+
+_ENV_DOC = (
+    "Optional. Environment variables injected into subprocess-type "
+    "executions only ('agentic_output' command) — refused outright for "
+    "'terminal' tasks, whose reused session's environment is fixed at "
+    "creation. Keys must match ^[A-Z][A-Z0-9_]*$; reserved names are refused "
+    "(PATH, HOME, SHELL, LD_*, PYTHON*, AW_*). Not a secrets channel — "
+    "recorded as-is on the run row."
+)
+
 _TASK_SLUG_DOC = (
     "Stable, app/user-defined identifier for this task — lowercase letters, "
     "digits and hyphens, starting with a letter. Optional; a task works "
@@ -196,6 +214,8 @@ TOOLS_SCHEMA: list[dict] = [
                 "task_id": {"type": "string", "description": "Task id (task-…). Required unless slug is given."},
                 "slug": {"type": "string", "description": _IDENTIFIER_DOC},
                 "wait_s": {"type": "integer", "description": f"Seconds to wait for the run to finish. Default 0 (return immediately), max {MAX_WAIT_S}."},
+                "params": {"type": "object", "description": _PARAMS_DOC},
+                "env": {"type": "object", "description": _ENV_DOC},
             },
         },
     },
@@ -284,6 +304,10 @@ def _run_view(run: dict) -> dict:
         "session_id": run.get("session_id"),
         "output": run.get("output"),
         "error": run.get("error"),
+        # What this run was actually called with — see validation.py;
+        # recorded so a run is reproducible from its own row.
+        "params": run.get("params") or {},
+        "env": run.get("env") or {},
     }
 
 
@@ -394,10 +418,14 @@ async def handle_request(request: dict, *, ctx, store, manager) -> dict | None:
             return _ok(req_id, _json({"deleted": task_id}))
 
         if name == "run_task":
-            try:
-                run = await manager.start_task(task_id, trigger="manual")
-            except KeyError:
+            task = store.get(task_id)
+            if not task:
                 return _err(req_id, f"task {task_id!r} not found")
+            run_args, err = validation.validate_run_args(
+                args, task_type=task.get("type") or "terminal")
+            if err:
+                return _err(req_id, err)
+            run = await manager.start_task(task_id, trigger="manual", **run_args)
             wait_s = min(max(int(args.get("wait_s") or 0), 0), MAX_WAIT_S)
             if wait_s:
                 settled = await _await_run(store, task_id, run["id"], wait_s)
